@@ -964,6 +964,16 @@ The docs show `client.app.log` and `experimental.session.compacting` shape, but 
 
 **Mitigation**: Phase 1 starts with a short spike to verify the injection API. If it doesn't exist as a first-class hook, the fallback is to use the `experimental.session.compacting` pattern: inject context via `output.context.push()` on a synthetic compaction trigger at session start. Worst case, contribute the missing hook upstream — opencode is open source.
 
+#### Resolved — Phase 1 spike findings (2026-05-28)
+
+The spike confirmed the following (type definitions at `~/.config/opencode/node_modules/@opencode-ai/plugin/dist/index.d.ts`):
+
+- **No `session.created` hook** — session lifecycle events come through the `event` hook (`event.type === "session.created"`). Session ID is at `event.properties.info.id`.
+- **Primary injection: `experimental.chat.system.transform`** — fires before every LLM call; `output.system: string[]` is the injection target. This guarantees context is present on every turn, not just after compaction.
+- **Supplementary: `experimental.session.compacting`** — `output.context: string[]`, used to survive context compaction.
+- **No `client.mcp.call()`** — MCP tool calling is not exposed to plugins. Joplin is accessed directly via its REST API (`http://127.0.0.1:41184`).
+- **Context injection strategy**: `experimental.chat.system.transform` (primary) + `experimental.session.compacting` (survival). No upstream issue needed.
+
 ### 12.2 Reflection cost & rate
 
 Reflections cost depends on your LLM choice. With Claude Sonnet @ ~$3/M input, ~$15/M output, a 4K-token reflection input + 1K output ≈ $0.027 per reflection. At 10 sessions/day × 4 reflections/session = 40 reflections/day ≈ $1/day. Cheap. No throttling needed in v1. With local models (LM Studio, Ollama) — free.
