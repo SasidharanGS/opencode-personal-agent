@@ -8,13 +8,7 @@ const LLM_BASE  = process.env.OPENCODE_PA_LLM_URL   ?? "http://127.0.0.1:8889/v1
 const LLM_KEY   = process.env.OPENCODE_PA_LLM_KEY   ?? "1"
 const LLM_MODEL = process.env.OPENCODE_PA_LLM_MODEL ?? "CLAUDE_4_6_SONNET"
 
-export interface FoundCandidate {
-  sig: string
-  tool: string
-  hits: number
-}
-
-export function findCandidate(noteBody: string, name: string): FoundCandidate | null {
+export function findCandidate(noteBody: string, name: string): PatternCandidate | null {
   const sections = noteBody.split(/\n(?=## )/)
   const pending = sections.filter(s => s.includes("**Status**: pending"))
 
@@ -40,7 +34,7 @@ export function findCandidate(noteBody: string, name: string): FoundCandidate | 
   return null
 }
 
-function extractCandidate(section: string, sig: string): FoundCandidate {
+function extractCandidate(section: string, sig: string): PatternCandidate {
   const toolMatch = section.match(/\*\*Tool\*\*: (.+)/)
   const hitsMatch = section.match(/\*\*Hits this session\*\*: (\d+)/)
   return {
@@ -125,7 +119,6 @@ export async function runPromote(
   args: string,
   sessionId: string,
   cwd: string,
-  client: any,
   joplin: JoplinClient,
   pendingPromotions: Set<string>,
 ): Promise<string> {
@@ -158,6 +151,7 @@ export async function runPromote(
 
     let draft: string
     try {
+      // Re-generates draft — may differ slightly from preview; acceptable for v1
       draft = await generateSkillMd(candidate)
     } catch (err) {
       return `LLM unavailable — can't generate draft. Try again when endpoint is up. (${String(err)})`
