@@ -107,7 +107,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
             const alreadyProposed = new Set(
               [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
             )
-            const candidates = detectPatterns(s.patternCandidates, alreadyProposed)
+            const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
             await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
           }).catch(async (err) => {
             await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
@@ -126,7 +126,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       if (state && state.pendingPromotions.size > 0) {
         const sigs = [...state.pendingPromotions].join(", ")
         output.system.push(
-          `[personal-agent] Pattern nudge: the following tool patterns have repeated 3+ times this session and are ready to promote into skills: ${sigs}. Proactively mention this to the user and offer to run /promote.`
+          `[personal-agent] Pattern nudge: the following tool patterns have repeated ${PATTERN_THRESHOLD}+ times this session and are ready to promote into skills: ${sigs}. Proactively mention this to the user and offer to run /promote.`
         )
       }
     },
@@ -179,7 +179,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       if (input.command === "promote") {
         const state = sessions.get(input.sessionID)
         const args = (input as any).args ?? ""
-        const cwd = (state as any)?.cwd ?? process.cwd()
+        const cwd = process.cwd()
         try {
           const result = await runPromote(
             args,
