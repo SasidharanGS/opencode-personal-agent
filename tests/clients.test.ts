@@ -38,3 +38,33 @@ describe("JoplinClient error handling", () => {
     expect(await client.searchNotes("+myrepo", 5)).toHaveLength(0)
   })
 })
+
+import { MemoryClient } from "../src/clients/memory"
+
+describe("MemoryClient", () => {
+  test("getTodayActivities returns null when baseUrl is null", async () => {
+    expect(await new MemoryClient(null).getTodayActivities()).toBeNull()
+  })
+
+  test("getTodayActivities returns null on fetch error", async () => {
+    expect(await new MemoryClient("http://127.0.0.1:1").getTodayActivities()).toBeNull()
+  })
+
+  test("summarizeActivities returns top-3 apps", () => {
+    const activities = [
+      { app: "VS Code", duration: 3600 },
+      { app: "Terminal", duration: 1800 },
+      { app: "Joplin", duration: 900 },
+      { app: "Browser", duration: 600 },
+    ]
+    const s = MemoryClient.summarizeActivities(activities)
+    expect(s).toContain("VS Code")
+    expect(s).toContain("Terminal")
+    expect(s).toContain("Joplin")
+    expect(s).not.toContain("Browser")
+  })
+
+  test("summarizeActivities returns null for empty array", () => {
+    expect(MemoryClient.summarizeActivities([])).toBeNull()
+  })
+})
