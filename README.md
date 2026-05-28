@@ -91,7 +91,7 @@ Implementation lands in five phases. Each phase is independently useful.
 | Phase | Deliverable | Status |
 |---|---|---|
 | 1 | Plugin scaffold + session.created memory bootstrap | **Shipped (awaiting review)** |
-| 2 | Idle watcher + background reflection (silent Joplin writes) | Not started |
+| 2 | Idle watcher + background reflection (silent Joplin writes) | **Shipped (awaiting review)** |
 | 3 | `/wrap` slash skill (session summary) | Not started |
 | 4 | Pattern detection + `/promote` slash skill | Not started |
 | 5 | Cross-session learnings + `/agents-edit` slash skill | Not started |

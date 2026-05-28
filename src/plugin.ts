@@ -2,6 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage } from "./bootstrap.js"
 import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
+import { normalizeArgs } from "./normalizer.js"
+import { reflect } from "./reflect.js"
 import type { SessionState, BootstrapData } from "./types.js"
 
 const JOPLIN_URL      = `http://127.0.0.1:${process.env.JOPLIN_PORT ?? "41184"}`
@@ -11,6 +13,8 @@ const JOPLIN_NOTEBOOK = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK ?? "Second Brain
 const PROJECT_MAP: Record<string, string> = (() => {
   try { return JSON.parse(process.env.OPENCODE_PA_PROJECT_MAP ?? "{}") } catch { return {} }
 })()
+const IDLE_THRESHOLD_MS        = Number(process.env.OPENCODE_PA_IDLE_MS   ?? 180_000)
+const REFLECTION_DEDUPE_WINDOW = Number(process.env.OPENCODE_PA_DEDUPE_MS ?? 120_000)
 
 const sessions = new Map<string, SessionState>()
 
@@ -76,6 +80,28 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         if (state?.idleTimer) clearTimeout(state.idleTimer)
         sessions.delete(sessionId)
       }
+
+      if (event.type === "session.idle") {
+        const sessionId: string = (event as any).properties?.info?.id ?? "unknown"
+        if (sessionId === "unknown") return
+        const state = sessions.get(sessionId)
+        if (!state) return
+
+        state.lastActivityTs = new Date()
+
+        if (state.idleTimer) clearTimeout(state.idleTimer)
+        state.idleTimer = setTimeout(() => {
+          const s = sessions.get(sessionId)
+          if (!s) return  // session was deleted (and timer was cancelled) before callback ran
+          if (Date.now() - s.lastActivityTs.getTime() < IDLE_THRESHOLD_MS) return
+          if (s.lastReflectionTs && Date.now() - s.lastReflectionTs.getTime() < REFLECTION_DEDUPE_WINDOW) return
+
+          s.lastReflectionTs = new Date()
+          reflect(s, client, joplin).catch(async (err) => {
+            await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect error", extra: { error: String(err) } } })
+          })
+        }, IDLE_THRESHOLD_MS)
+      }
     },
 
     "experimental.chat.system.transform": async (input, output) => {
@@ -94,9 +120,14 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       }
     },
 
-    "tool.execute.before": async (input, _output) => {
+    "tool.execute.before": async (input, output) => {
       const state = sessions.get(input.sessionID)
-      if (state) state.lastActivityTs = new Date()
+      if (!state) return
+      state.lastActivityTs = new Date()
+      const sig = normalizeArgs(input.tool, output.args)
+      state.toolCalls.push({ ts: new Date(), tool: input.tool, argsSignature: sig })
+      if (state.toolCalls.length > 200) state.toolCalls.shift()
+      state.patternCandidates.set(sig, (state.patternCandidates.get(sig) ?? 0) + 1)
     },
 
     "tool.execute.after": async (input, _output) => {
