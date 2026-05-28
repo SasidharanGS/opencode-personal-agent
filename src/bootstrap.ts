@@ -4,6 +4,9 @@ export function detectProject(cwd: string, projectMap: Record<string, string>): 
   const parts = cwd.replace(/\/$/, "").split("/").filter(Boolean)
   if (parts.length === 0) return "unknown"
   const candidates: string[] = []
+  // Walk from the deepest path segment upward; skip dot-prefixed segments (hidden dirs
+  // like .git, .worktrees) and remove any segment that immediately follows one — the
+  // segment before a dot-dir is typically a tool artifact, not a meaningful project name.
   for (let i = parts.length - 1; i >= 0; i--) {
     const seg = parts[i]
     if (seg.startsWith(".")) {

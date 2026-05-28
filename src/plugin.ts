@@ -21,9 +21,19 @@ export const PersonalAgent: Plugin = async ({ client }) => {
   return {
     "event": async ({ event }) => {
       if (event.type === "session.created") {
+        // event.properties.info follows the Session type from @opencode-ai/sdk
+        // Accessed via `any` because the plugin's Event union type doesn't expose
+        // the session.created properties shape in the current SDK version.
         const info = (event as any).properties?.info
         const sessionId: string = info?.id ?? "unknown"
         const directory: string = info?.directory ?? ""
+
+        if (sessionId === "unknown") {
+          await client.app.log({
+            body: { service: "personal-agent", level: "warn", message: "session.created event missing session ID — skipping bootstrap", extra: {} },
+          })
+          return
+        }
 
         const state: SessionState = {
           sessionId,
@@ -42,6 +52,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         })
 
         gatherBootstrapData(joplin, memory, directory).then(async (data) => {
+          if (!sessions.has(sessionId)) return
           state.bootstrappedContext = composeBootstrapMessage(data)
           await client.app.log({
             body: {
@@ -60,6 +71,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
 
       if (event.type === "session.deleted") {
         const sessionId: string = (event as any).properties?.info?.id ?? "unknown"
+        if (sessionId === "unknown") return
         const state = sessions.get(sessionId)
         if (state?.idleTimer) clearTimeout(state.idleTimer)
         sessions.delete(sessionId)

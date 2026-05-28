@@ -16,13 +16,13 @@ export class JoplinClient {
   async getNote(titleOrId: string): Promise<JoplinNote | null> {
     try {
       const res = await fetch(
-        this.url("/notes", { query: titleOrId, fields: "id,title,body,updated_time", limit: 1 }),
+        this.url("/notes", { query: titleOrId, fields: "id,title,body,updated_time", limit: 10 }),
         { signal: AbortSignal.timeout(5_000) }
       )
       if (!res.ok) return null
       const data = await res.json() as any
       const items: JoplinNote[] = data?.items ?? (Array.isArray(data) ? data : [])
-      return items[0] ?? null
+      return items.find(n => n.title === titleOrId) ?? null
     } catch {
       return null
     }
@@ -42,6 +42,11 @@ export class JoplinClient {
     }
   }
 
+  /**
+   * Reads the note, appends content, and writes back via PUT.
+   * Not atomic — concurrent calls can overwrite each other.
+   * Acceptable in v1 (single-session use); revisit in Phase 2 if needed.
+   */
   async appendToNote(titleOrId: string, content: string, notebook: string): Promise<boolean> {
     try {
       const note = await this.getNote(titleOrId)

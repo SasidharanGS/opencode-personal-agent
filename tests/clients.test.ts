@@ -33,6 +33,9 @@ describe("JoplinClient error handling", () => {
     expect(await client.getNote("Decisions \u2014 2026-05")).toBeNull()
   })
 
+  // getNote uses limit:10 + exact title filter (n.title === titleOrId) to guard against
+  // Joplin's fuzzy full-text search returning a note with a different title.
+  // Full integration verification is deferred to Task 8 (integration tests).
   test("searchNotes returns empty array on fetch error", async () => {
     const client = new JoplinClient("http://127.0.0.1:1", "bad-token")
     expect(await client.searchNotes("+myrepo", 5)).toHaveLength(0)
