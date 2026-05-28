@@ -47,6 +47,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           lastReflectionTs: null,
           toolCalls: [],
           patternCandidates: new Map(),
+          pendingPromotions: new Set(),
           bootstrappedContext: null,
           idleTimer: null,
         }

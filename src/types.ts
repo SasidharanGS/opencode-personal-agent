@@ -5,6 +5,7 @@ export interface SessionState {
   lastReflectionTs: Date | null
   toolCalls: ToolCall[]
   patternCandidates: Map<string, number>
+  pendingPromotions: Set<string>
   bootstrappedContext: string | null
   idleTimer: ReturnType<typeof setTimeout> | null
 }
@@ -13,6 +14,12 @@ export interface ToolCall {
   ts: Date
   tool: string
   argsSignature: string
+}
+
+export interface PatternCandidate {
+  sig: string
+  tool: string
+  hits: number
 }
 
 export interface JoplinNote {
