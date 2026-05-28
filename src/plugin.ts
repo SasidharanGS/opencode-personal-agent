@@ -92,7 +92,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         if (state.idleTimer) clearTimeout(state.idleTimer)
         state.idleTimer = setTimeout(() => {
           const s = sessions.get(sessionId)
-          if (!s) return
+          if (!s) return  // session was deleted (and timer was cancelled) before callback ran
           if (Date.now() - s.lastActivityTs.getTime() < IDLE_THRESHOLD_MS) return
           if (s.lastReflectionTs && Date.now() - s.lastReflectionTs.getTime() < REFLECTION_DEDUPE_WINDOW) return
 

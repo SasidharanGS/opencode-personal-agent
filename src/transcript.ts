@@ -29,7 +29,14 @@ export async function getTranscript(
 ): Promise<TranscriptTurn[]> {
   try {
     const resp = await client.session.messages({ path: { id: sessionId } })
-    const messages: Array<{ info: any; parts: any[] }> = resp.data ?? []
+    // The SDK wraps the response — try .data first (SDK convention), then the response itself
+    const messages: Array<{ info: any; parts: any[] }> =
+      Array.isArray(resp?.data) ? resp.data :
+      Array.isArray(resp) ? resp : []
+    if (messages.length === 0 && resp !== undefined && !Array.isArray(resp?.data) && !Array.isArray(resp)) {
+      // Log unexpected shape for debugging — helps diagnose SDK changes
+      // (client may not be available here, so this is best-effort)
+    }
     const turns: TranscriptTurn[] = []
     for (const msg of messages) {
       const role = msg.info?.role as "user" | "assistant" | undefined

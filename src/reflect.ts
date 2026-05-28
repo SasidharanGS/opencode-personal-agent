@@ -81,9 +81,16 @@ export function agentLearningsNoteName(date: Date): string {
 }
 
 async function countCrossSessionLearnings(joplin: JoplinClient, observed: string): Promise<number> {
-  const keyword = observed.slice(0, 40)
-  const notes = await joplin.searchNotes(keyword, 10)
-  return notes.filter(n => n.title.startsWith("Agent Learnings")).length
+  // Search for notes whose body contains a learning entry with this observation.
+  // Use a short keyword to avoid Joplin query operator issues with special chars.
+  const keyword = observed.replace(/[^a-zA-Z0-9\s]/g, " ").trim().split(/\s+/).slice(0, 5).join(" ")
+  if (!keyword) return 1
+  const notes = await joplin.searchNotes(keyword, 20)
+  // Count entries across all Agent Learnings notes that contain this observation
+  return notes.filter(n =>
+    n.title.startsWith("Agent Learnings") &&
+    n.body.includes(observed.slice(0, 30))
+  ).length + 1  // +1 for the current session (not yet written)
 }
 
 export async function reflect(
@@ -113,6 +120,8 @@ export async function reflect(
           { role: "system", content: REFLECTION_SYSTEM_PROMPT },
           { role: "user",   content: transcript },
         ],
+        // response_format is OpenAI-specific; ignored by some endpoints.
+        // parseReflectionJson's regex fallback handles prose-wrapped JSON.
         response_format: { type: "json_object" },
         max_tokens: 2000,
         temperature: 0.2,
@@ -142,6 +151,7 @@ export async function reflect(
 
   const learningNoteName = agentLearningsNoteName(now)
   for (const l of result.agent_learnings) {
+    // Count prior sessions where this same observation was recorded (best-effort via Joplin search)
     const crossCount = await countCrossSessionLearnings(joplin, l.observed)
     await joplin.appendToNote(learningNoteName, renderLearning(l, now, crossCount, state.sessionId), JOPLIN_NOTEBOOK)
   }
@@ -155,5 +165,6 @@ export async function reflect(
     },
   })
 
-  state.lastReflectionTs = now
+  // Note: state.lastReflectionTs is set optimistically in plugin.ts before this function
+  // is called (fire-and-forget pattern) to prevent double-reflection during slow LLM calls.
 }
