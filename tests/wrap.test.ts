@@ -80,4 +80,14 @@ describe("formatWrapSummary", () => {
     const s = formatWrapSummary(data, "2026-05", now)
     expect(s).toContain("(2 entries)")
   })
+
+  test("shows singular 'entry' for count of 1", () => {
+    const data: WrapData = {
+      savedDecisions: ["Just one decision"], savedMemories: [],
+      skillCandidates: [], agentsMdProposals: [], reflectError: null,
+    }
+    const s = formatWrapSummary(data, "2026-05", new Date("2026-05-28T18:14:00Z"))
+    expect(s).toContain("(1 entry)")
+    expect(s).not.toContain("(1 entries)")
+  })
 })

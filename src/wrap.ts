@@ -101,10 +101,13 @@ export async function runWrap(
   const skillCandidates: WrapData["skillCandidates"] = []
   const skillsNote = await joplin.getNote("Skills Proposed")
   if (skillsNote?.body) {
-    for (const m of skillsNote.body.matchAll(/^## ([^\s\u2014]+) \u2014 proposed/gm)) {
+    for (const m of skillsNote.body.matchAll(/^## (.+?) \u2014 proposed/gm)) {
       const name = m[1]
       const hitsMatch = skillsNote.body.match(new RegExp(`## ${name}[\\s\\S]*?\\*\\*Hits this session\\*\\*: (\\d+)`))
-      const promoted = /Status: promoted/.test(skillsNote.body.split(`## ${name}`)[1] ?? "")
+      const sectionStart = skillsNote.body.indexOf(`## ${name} \u2014 proposed`)
+      const nextSection = skillsNote.body.indexOf("\n## ", sectionStart + 1)
+      const section = skillsNote.body.slice(sectionStart, nextSection > -1 ? nextSection : undefined)
+      const promoted = /Status: promoted/.test(section)
       if (!promoted) skillCandidates.push({ name, hits: hitsMatch ? parseInt(hitsMatch[1], 10) : 0 })
     }
   }
