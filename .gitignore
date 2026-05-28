@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+.pnp.cjs
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Environment & secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+**/secrets.json
+**/credentials.json
+
+# Agent / opencode local config — per author convention, these stay local
+AGENTS.md
+.claude/
+.opencode/
+CLAUDE.md
+GEMINI.md
+
+# Worktrees (kept inside repo per author convention but never committed)
+.worktrees/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Bun
+.bun/
+bun.lockb
+
+# Personal staging notes — never commit
+NOTES.local.md
+TODO.local.md
+SCRATCH.md

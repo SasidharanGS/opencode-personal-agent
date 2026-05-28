@@ -1,0 +1,49 @@
+// Example snippet to merge into your opencode config.
+// Location: ~/.config/opencode/opencode.jsonc  (global)
+//      or:   .opencode/opencode.jsonc           (project)
+//
+// This is NOT a full opencode config — only the parts relevant to
+// opencode-personal-agent. Adapt to fit your existing config.
+
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // The plugin will be loaded from a local file or symlink.
+  // After cloning the repo and building (once Phase 1 ships):
+  //
+  //   ln -s /path/to/opencode-personal-agent/dist/personal-agent.js \
+  //         ~/.config/opencode/plugins/personal-agent.js
+  //
+  // (No "plugin" array entry needed — files in ~/.config/opencode/plugins/
+  // are auto-loaded.)
+
+  // The plugin reads three env vars at startup. You can set them in your
+  // shell, in opencode.jsonc, or in a .env file the plugin loads.
+  //
+  // OPENCODE_PA_LLM_URL     — OpenAI-compatible chat completions endpoint
+  // OPENCODE_PA_LLM_KEY     — API key for the above
+  // OPENCODE_PA_LLM_MODEL   — model id for reflection (e.g. claude-3-5-sonnet)
+  // OPENCODE_PA_MEMORY_URL  — optional, your memory backend (see docs/adapters/)
+  // OPENCODE_PA_JOPLIN_NOTEBOOK — Joplin notebook for new notes (default "Second Brain")
+
+  // Joplin MCP server — required for the plugin to write decisions/memories.
+  // Use any Joplin MCP server you trust. Example with a generic JS server:
+  "mcp": {
+    "joplin": {
+      "type": "local",
+      "command": [
+        "/opt/homebrew/bin/node",
+        "/path/to/your/joplin-mcp-server/build/index.js"
+      ],
+      "environment": {
+        "JOPLIN_DB_PATH": "/Users/YOU/.config/joplin-desktop/database.sqlite",
+        "JOPLIN_TOKEN": "your-joplin-web-clipper-token",
+        "JOPLIN_PORT": "41184"
+      },
+      "enabled": true
+    }
+  }
+
+  // Your provider config goes here. The plugin doesn't add new providers —
+  // it just uses the LLM endpoint you configure via OPENCODE_PA_LLM_*.
+}
