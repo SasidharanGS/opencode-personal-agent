@@ -4,6 +4,7 @@ import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
 import { reflect } from "./reflect.js"
+import { runWrap } from "./wrap.js"
 import type { SessionState, BootstrapData } from "./types.js"
 
 const JOPLIN_URL      = `http://127.0.0.1:${process.env.JOPLIN_PORT ?? "41184"}`
@@ -133,6 +134,21 @@ export const PersonalAgent: Plugin = async ({ client }) => {
     "tool.execute.after": async (input, _output) => {
       const state = sessions.get(input.sessionID)
       if (state) state.lastActivityTs = new Date()
+    },
+
+    "command.execute.before": async (input, output) => {
+      if (input.command !== "wrap") return
+      const state = sessions.get(input.sessionID)
+      if (!state) {
+        output.parts.push({ type: "text", text: "personal-agent: no session state found for /wrap" } as any)
+        return
+      }
+      try {
+        const summary = await runWrap(state, client, joplin)
+        output.parts.push({ type: "text", text: summary } as any)
+      } catch (err) {
+        output.parts.push({ type: "text", text: `personal-agent: /wrap failed \u2014 ${String(err)}` } as any)
+      }
     },
   }
 }
