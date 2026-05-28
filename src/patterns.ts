@@ -45,6 +45,7 @@ export function markPromoted(body: string, sig: string): string {
 export async function writeNewPatterns(
   candidates: PatternCandidate[],
   joplin: JoplinClient,
+  notebook: string,
 ): Promise<void> {
   if (candidates.length === 0) return
   const existing = await joplin.getNote("Skills Proposed")
@@ -57,5 +58,5 @@ export async function writeNewPatterns(
     .map(c => skillsProposedEntry(c, new Date()))
     .join("\n")
   if (!newEntries) return
-  await joplin.appendToNote("Skills Proposed", "\n" + newEntries)
+  await joplin.appendToNote("Skills Proposed", "\n" + newEntries, notebook)
 }

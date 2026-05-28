@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test"
-import { detectPatterns, skillsProposedEntry, markPromoted } from "../src/patterns"
+import { detectPatterns, skillsProposedEntry, markPromoted, writeNewPatterns } from "../src/patterns"
 
 describe("detectPatterns", () => {
   test("returns empty array for empty map", () => {
@@ -90,5 +90,38 @@ describe("markPromoted", () => {
   test("returns body unchanged if sig not found", () => {
     const body = "## bash:git status — proposed\n\n**Status**: pending\n\n---"
     expect(markPromoted(body, "bash:git log")).toBe(body)
+  })
+})
+
+describe("writeNewPatterns", () => {
+  test("does nothing when candidates array is empty", async () => {
+    const joplin = {
+      getNote: async () => null,
+      appendToNote: async () => { throw new Error("should not be called") },
+    } as any
+    await expect(writeNewPatterns([], joplin, "Second Brain")).resolves.toBeUndefined()
+  })
+
+  test("appends new candidates not already in note", async () => {
+    const appended: string[] = []
+    const joplin = {
+      getNote: async () => null,
+      appendToNote: async (_title: string, content: string, _nb: string) => { appended.push(content); return true },
+    } as any
+    const candidates = [{ sig: "bash:git status", tool: "bash", hits: 3 }]
+    await writeNewPatterns(candidates, joplin, "Second Brain")
+    expect(appended).toHaveLength(1)
+    expect(appended[0]).toContain("bash:git status")
+  })
+
+  test("skips candidates already in note body", async () => {
+    const appended: string[] = []
+    const joplin = {
+      getNote: async () => ({ body: "## bash:git status — proposed\n\n**Status**: pending\n\n---" }),
+      appendToNote: async (_title: string, content: string, _nb: string) => { appended.push(content); return true },
+    } as any
+    const candidates = [{ sig: "bash:git status", tool: "bash", hits: 3 }]
+    await writeNewPatterns(candidates, joplin, "Second Brain")
+    expect(appended).toHaveLength(0)
   })
 })
