@@ -4,9 +4,11 @@ set -e
 WORKTREE="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$HOME/.config/opencode/plugins"
 SKILLS_DEST="$HOME/.config/opencode/skills"
+COMMANDS_DEST="$HOME/.config/opencode/commands"
 
 mkdir -p "$DEST/personal-agent/clients"
 mkdir -p "$SKILLS_DEST/wrap"
+mkdir -p "$COMMANDS_DEST"
 
 cp "$WORKTREE/src/bootstrap.ts"         "$DEST/personal-agent/bootstrap.ts"
 cp "$WORKTREE/src/types.ts"             "$DEST/personal-agent/types.ts"
@@ -27,7 +29,9 @@ sed 's|"./bootstrap.js"|"./personal-agent/bootstrap.js"|g;
   "$WORKTREE/src/plugin.ts" > "$DEST/personal-agent.ts"
 
 cp "$WORKTREE/skills/wrap/SKILL.md"     "$SKILLS_DEST/wrap/SKILL.md"
+cp "$WORKTREE/commands/wrap.md"         "$COMMANDS_DEST/wrap.md"
 
 echo "Deployed personal-agent plugin to $DEST"
 echo "Deployed /wrap skill to $SKILLS_DEST/wrap/"
+echo "Deployed /wrap command to $COMMANDS_DEST/wrap.md"
 echo "Restart opencode to load."
