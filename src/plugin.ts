@@ -3,7 +3,9 @@ import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMes
 import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
+import { detectPatterns, writeNewPatterns } from "./patterns.js"
 import { reflect } from "./reflect.js"
+import { runPromote } from "./promote.js"
 import { runWrap } from "./wrap.js"
 import type { SessionState, BootstrapData } from "./types.js"
 
@@ -16,6 +18,7 @@ const PROJECT_MAP: Record<string, string> = (() => {
 })()
 const IDLE_THRESHOLD_MS        = Number(process.env.OPENCODE_PA_IDLE_MS   ?? 180_000)
 const REFLECTION_DEDUPE_WINDOW = Number(process.env.OPENCODE_PA_DEDUPE_MS ?? 120_000)
+const PATTERN_THRESHOLD = Number(process.env.OPENCODE_PA_PATTERN_THRESHOLD ?? 3)
 
 const sessions = new Map<string, SessionState>()
 
@@ -47,6 +50,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           lastReflectionTs: null,
           toolCalls: [],
           patternCandidates: new Map(),
+          pendingPromotions: new Set(),
           bootstrappedContext: null,
           idleTimer: null,
         }
@@ -98,8 +102,15 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           if (s.lastReflectionTs && Date.now() - s.lastReflectionTs.getTime() < REFLECTION_DEDUPE_WINDOW) return
 
           s.lastReflectionTs = new Date()
-          reflect(s, client, joplin).catch(async (err) => {
-            await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect error", extra: { error: String(err) } } })
+          reflect(s, client, joplin).then(async () => {
+            const skillsNote = await joplin.getNote("Skills Proposed")
+            const alreadyProposed = new Set(
+              [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
+            )
+            const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
+            await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
+          }).catch(async (err) => {
+            await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
           })
         }, IDLE_THRESHOLD_MS)
       }
@@ -111,6 +122,12 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       const state = sessions.get(sessionId)
       if (state?.bootstrappedContext) {
         output.system.push(state.bootstrappedContext)
+      }
+      if (state && state.pendingPromotions.size > 0) {
+        const sigs = [...state.pendingPromotions].join(", ")
+        output.system.push(
+          `[personal-agent] Pattern nudge: the following tool patterns have repeated ${PATTERN_THRESHOLD}+ times this session and are ready to promote into skills: ${sigs}. Proactively mention this to the user and offer to run /promote.`
+        )
       }
     },
 
@@ -128,7 +145,14 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       const sig = normalizeArgs(input.tool, output.args)
       state.toolCalls.push({ ts: new Date(), tool: input.tool, argsSignature: sig })
       if (state.toolCalls.length > 200) state.toolCalls.shift()
-      state.patternCandidates.set(sig, (state.patternCandidates.get(sig) ?? 0) + 1)
+      const newCount = (state.patternCandidates.get(sig) ?? 0) + 1
+      state.patternCandidates.set(sig, newCount)
+      if (newCount === PATTERN_THRESHOLD && !state.pendingPromotions.has(sig)) {
+        state.pendingPromotions.add(sig)
+        await client.app.log({
+          body: { service: "personal-agent", level: "info", message: `pattern flagged: ${sig}`, extra: { hits: newCount } },
+        })
+      }
     },
 
     "tool.execute.after": async (input, _output) => {
@@ -137,17 +161,38 @@ export const PersonalAgent: Plugin = async ({ client }) => {
     },
 
     "command.execute.before": async (input, output) => {
-      if (input.command !== "wrap") return
-      const state = sessions.get(input.sessionID)
-      if (!state) {
-        output.parts.push({ type: "text", text: "personal-agent: no session state found for /wrap" } as any)
+      if (input.command === "wrap") {
+        const state = sessions.get(input.sessionID)
+        if (!state) {
+          output.parts.push({ type: "text", text: "personal-agent: no session state found for /wrap" } as any)
+          return
+        }
+        try {
+          const summary = await runWrap(state, client, joplin)
+          output.parts.push({ type: "text", text: summary } as any)
+        } catch (err) {
+          output.parts.push({ type: "text", text: `personal-agent: /wrap failed — ${String(err)}` } as any)
+        }
         return
       }
-      try {
-        const summary = await runWrap(state, client, joplin)
-        output.parts.push({ type: "text", text: summary } as any)
-      } catch (err) {
-        output.parts.push({ type: "text", text: `personal-agent: /wrap failed \u2014 ${String(err)}` } as any)
+
+      if (input.command === "promote") {
+        const state = sessions.get(input.sessionID)
+        const args = (input as any).args ?? ""
+        const cwd = process.cwd()
+        try {
+          const result = await runPromote(
+            args,
+            input.sessionID,
+            cwd,
+            joplin,
+            state?.pendingPromotions ?? new Set(),
+          )
+          output.parts.push({ type: "text", text: result } as any)
+        } catch (err) {
+          output.parts.push({ type: "text", text: `personal-agent: /promote failed — ${String(err)}` } as any)
+        }
+        return
       }
     },
   }

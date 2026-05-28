@@ -65,6 +65,20 @@ export class JoplinClient {
     }
   }
 
+  async updateNote(id: string, body: string): Promise<boolean> {
+    try {
+      const res = await fetch(this.url(`/notes/${id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
   async createNote(title: string, body: string, notebook: string): Promise<boolean> {
     try {
       const folderId = await this.getFolderId(notebook)
