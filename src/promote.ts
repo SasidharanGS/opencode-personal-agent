@@ -177,14 +177,7 @@ export async function runPromote(
       const updatedBody = markPromoted(note.body, candidate.sig)
       const freshNote = await joplin.getNote("Skills Proposed")
       if (freshNote) {
-        await fetch(
-          `${process.env.JOPLIN_BASE_URL ?? "http://127.0.0.1:41184"}/notes/${freshNote.id}?token=${process.env.JOPLIN_TOKEN ?? ""}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ body: updatedBody }),
-          }
-        )
+        await joplin.updateNote(freshNote.id, updatedBody)
       }
     } catch {
       // Joplin write failure is non-fatal — skill file already written
