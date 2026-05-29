@@ -5,6 +5,7 @@ import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
 import { detectPatterns, writeNewPatterns } from "./patterns.js"
 import { reflect } from "./reflect.js"
+import { runAgentsEdit } from "./agents-edit.js"
 import { runPromote } from "./promote.js"
 import { runWrap } from "./wrap.js"
 import type { SessionState, BootstrapData } from "./types.js"
@@ -110,6 +111,25 @@ export const PersonalAgent: Plugin = async ({ client }) => {
             )
             const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
             await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
+            const now = new Date()
+            const learningsNoteName = `Agent Learnings \u2014 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+            const learningsNote = await joplin.getNote(learningsNoteName)
+            if (learningsNote?.body) {
+              const sections = learningsNote.body.split(/\n(?=## )/)
+              for (const section of sections) {
+                const statusMatch = section.match(/\*\*Status\*\*: (\S+)/)
+                const observedMatch = section.match(/\*\*Observed\*\*: (.+)/)
+                if (statusMatch?.[1] === "proposed_agents_edit" && observedMatch) {
+                  const observed = observedMatch[1].trim()
+                  if (!s.pendingAgentsEdits.has(observed)) {
+                    s.pendingAgentsEdits.add(observed)
+                    await client.app.log({
+                      body: { service: "personal-agent", level: "info", message: `agents-edit flagged: ${observed}`, extra: {} },
+                    })
+                  }
+                }
+              }
+            }
           }).catch(async (err) => {
             await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
           })
@@ -128,6 +148,12 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         const sigs = [...state.pendingPromotions].join(", ")
         output.system.push(
           `[personal-agent] Pattern nudge: the following tool patterns have repeated ${PATTERN_THRESHOLD}+ times this session and are ready to promote into skills: ${sigs}. Proactively mention this to the user and offer to run /promote.`
+        )
+      }
+      if (state && state.pendingAgentsEdits.size > 0) {
+        const observed = [...state.pendingAgentsEdits].join("; ")
+        output.system.push(
+          `[personal-agent] Agent learning nudge: the following cross-session learnings are ready to apply to agent-learnings.md: ${observed}. Proactively mention this to the user and offer to run /agents-edit.`
         )
       }
     },
@@ -192,6 +218,25 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           output.parts.push({ type: "text", text: result } as any)
         } catch (err) {
           output.parts.push({ type: "text", text: `personal-agent: /promote failed — ${String(err)}` } as any)
+        }
+        return
+      }
+
+      if (input.command === "agents-edit") {
+        const state = sessions.get(input.sessionID)
+        const args = (input as any).args ?? ""
+        const cwd = process.cwd()
+        try {
+          const result = await runAgentsEdit(
+            args,
+            input.sessionID,
+            cwd,
+            joplin,
+            state?.pendingAgentsEdits ?? new Set(),
+          )
+          output.parts.push({ type: "text", text: result } as any)
+        } catch (err) {
+          output.parts.push({ type: "text", text: `personal-agent: /agents-edit failed — ${String(err)}` } as any)
         }
         return
       }
