@@ -1053,7 +1053,78 @@ async function runWrap(state, client, joplin) {
   return formatWrapSummary({ savedDecisions, savedMemories, skillCandidates, agentsMdProposals, reflectError }, monthKey, now);
 }
 
+// src/auto-install.ts
+import { mkdir as mkdir3, readdir, copyFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join as join4, dirname as dirname3, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+function packageRootFromMetaUrl(metaUrl) {
+  const fileUrl = new URL(metaUrl);
+  const filePath = fileURLToPath(fileUrl);
+  return resolve(dirname3(filePath), "..");
+}
+async function ensureExtras(packageRoot, opencodeConfigDir, env = process.env) {
+  if (env.OPENCODE_PA_SKIP_AUTO_INSTALL === "1") {
+    return { skipped: true, skillsAdded: [], commandsAdded: [], reason: "OPENCODE_PA_SKIP_AUTO_INSTALL=1" };
+  }
+  const skillsSrc = join4(packageRoot, "skills");
+  const commandsSrc = join4(packageRoot, "commands");
+  if (!existsSync(skillsSrc) && !existsSync(commandsSrc)) {
+    return { skipped: true, skillsAdded: [], commandsAdded: [], reason: "no bundled skills or commands found" };
+  }
+  const skillsDest = join4(opencodeConfigDir, "skills");
+  const commandsDest = join4(opencodeConfigDir, "commands");
+  await mkdir3(skillsDest, { recursive: true });
+  await mkdir3(commandsDest, { recursive: true });
+  const skillsAdded = await copyMissingSkills(skillsSrc, skillsDest);
+  const commandsAdded = await copyMissingCommands(commandsSrc, commandsDest);
+  return { skipped: false, skillsAdded, commandsAdded };
+}
+async function copyMissingSkills(src, dest) {
+  if (!existsSync(src))
+    return [];
+  const added = [];
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory())
+      continue;
+    const targetDir = join4(dest, entry.name);
+    const targetSkillMd = join4(targetDir, "SKILL.md");
+    if (existsSync(targetSkillMd))
+      continue;
+    await copyDirShallow(join4(src, entry.name), targetDir);
+    added.push(entry.name);
+  }
+  return added;
+}
+async function copyMissingCommands(src, dest) {
+  if (!existsSync(src))
+    return [];
+  const added = [];
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md"))
+      continue;
+    const target = join4(dest, entry.name);
+    if (existsSync(target))
+      continue;
+    await copyFile(join4(src, entry.name), target);
+    added.push(entry.name.replace(/\.md$/, ""));
+  }
+  return added;
+}
+async function copyDirShallow(src, dest) {
+  await mkdir3(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile())
+      continue;
+    await copyFile(join4(src, entry.name), join4(dest, entry.name));
+  }
+}
+
 // src/plugin.ts
+import { join as join5 } from "node:path";
 var JOPLIN_URL = `http://127.0.0.1:${process.env.JOPLIN_PORT ?? "41184"}`;
 var JOPLIN_TOKEN = process.env.OPENCODE_PA_JOPLIN_TOKEN ?? process.env.JOPLIN_TOKEN ?? "";
 var MEMORY_BASE = process.env.OPENCODE_PA_MEMORY_URL ?? null;
@@ -1072,6 +1143,28 @@ var sessions = new Map;
 var PersonalAgent = async ({ client }) => {
   const joplin = new JoplinClient(JOPLIN_URL, JOPLIN_TOKEN);
   const memory = new MemoryClient(MEMORY_BASE);
+  try {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+    const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR ?? (home ? join5(home, ".config", "opencode") : "");
+    if (opencodeConfigDir) {
+      const pkgRoot = packageRootFromMetaUrl(import.meta.url);
+      const result = await ensureExtras(pkgRoot, opencodeConfigDir);
+      if (!result.skipped && (result.skillsAdded.length || result.commandsAdded.length)) {
+        await client.app.log({
+          body: {
+            service: "personal-agent",
+            level: "info",
+            message: `auto-installed extras: skills=[${result.skillsAdded.join(",")}] commands=[${result.commandsAdded.join(",")}]`,
+            extra: {}
+          }
+        });
+      }
+    }
+  } catch (err) {
+    await client.app.log({
+      body: { service: "personal-agent", level: "warn", message: "auto-install of skills/commands failed", extra: { error: String(err) } }
+    });
+  }
   return {
     event: async ({ event }) => {
       if (event.type === "session.created") {

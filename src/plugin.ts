@@ -8,6 +8,8 @@ import { reflect, agentLearningsNoteName } from "./reflect.js"
 import { runAgentsEdit } from "./agents-edit.js"
 import { runPromote } from "./promote.js"
 import { runWrap } from "./wrap.js"
+import { ensureExtras, packageRootFromMetaUrl } from "./auto-install.js"
+import { join } from "node:path"
 import type { SessionState, BootstrapData } from "./types.js"
 
 const JOPLIN_URL      = `http://127.0.0.1:${process.env.JOPLIN_PORT ?? "41184"}`
@@ -26,6 +28,33 @@ const sessions = new Map<string, SessionState>()
 export const PersonalAgent: Plugin = async ({ client }) => {
   const joplin = new JoplinClient(JOPLIN_URL, JOPLIN_TOKEN)
   const memory = new MemoryClient(MEMORY_BASE)
+
+  // Copy bundled skills + slash commands into ~/.config/opencode on first load.
+  // Idempotent — never overwrites existing files. Opt-out: OPENCODE_PA_SKIP_AUTO_INSTALL=1.
+  try {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? ""
+    const opencodeConfigDir =
+      process.env.OPENCODE_CONFIG_DIR
+      ?? (home ? join(home, ".config", "opencode") : "")
+    if (opencodeConfigDir) {
+      const pkgRoot = packageRootFromMetaUrl(import.meta.url)
+      const result = await ensureExtras(pkgRoot, opencodeConfigDir)
+      if (!result.skipped && (result.skillsAdded.length || result.commandsAdded.length)) {
+        await client.app.log({
+          body: {
+            service: "personal-agent",
+            level: "info",
+            message: `auto-installed extras: skills=[${result.skillsAdded.join(",")}] commands=[${result.commandsAdded.join(",")}]`,
+            extra: {},
+          },
+        })
+      }
+    }
+  } catch (err) {
+    await client.app.log({
+      body: { service: "personal-agent", level: "warn", message: "auto-install of skills/commands failed", extra: { error: String(err) } },
+    })
+  }
 
   return {
     "event": async ({ event }) => {
