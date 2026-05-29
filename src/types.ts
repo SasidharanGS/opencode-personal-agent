@@ -6,6 +6,7 @@ export interface SessionState {
   toolCalls: ToolCall[]
   patternCandidates: Map<string, number>
   pendingPromotions: Set<string>
+  pendingAgentsEdits: Set<string>
   bootstrappedContext: string | null
   idleTimer: ReturnType<typeof setTimeout> | null
 }
@@ -20,6 +21,16 @@ export interface PatternCandidate {
   sig: string
   tool: string
   hits: number
+}
+
+// Parsed from Joplin Agent Learnings note body. Fields are string (not union types)
+// because the source is LLM-written Joplin text — values may vary slightly.
+export interface AgentLearningEntry {
+  observed: string
+  type: string              // "behavior_correction" | "preference_expressed"
+  crossSessionCount: number
+  projectTag: string | null
+  status: string            // "proposed_agents_edit" | "pending_more_evidence" | "applied" | "skipped"
 }
 
 export interface JoplinNote {
@@ -40,6 +51,7 @@ export interface BootstrapData {
   recentMemories: string[]
   projectNotes: string[]
   activitySummary: string | null
+  agentLearnings: string | null    // raw content of agent-learnings.md injected into system prompt
 }
 
 export interface MemoryActivity {

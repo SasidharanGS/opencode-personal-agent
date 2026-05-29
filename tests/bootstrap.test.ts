@@ -43,6 +43,7 @@ describe("composeBootstrapMessage", () => {
     recentMemories: ["2026-05-21 \u2014 Merged PR \u2014 public release done"],
     projectNotes: ["Design spec \u2014 full spec for v1 plugin"],
     activitySummary: "VS Code, Terminal, Joplin",
+    agentLearnings: null,
   }
 
   test("includes project name", () => {
@@ -75,5 +76,34 @@ describe("composeBootstrapMessage", () => {
 
   test("result is under 2400 chars (~600 tokens)", () => {
     expect(composeBootstrapMessage(baseData).length).toBeLessThan(2400)
+  })
+})
+
+describe("composeBootstrapMessage — agent learnings", () => {
+  test("includes agent learnings section when present", () => {
+    const data: BootstrapData = {
+      projectName: "myproject",
+      recentDecisions: [],
+      recentMemories: [],
+      projectNotes: [],
+      activitySummary: null,
+      agentLearnings: "## Behavioral Rules\n\n### Use kebab-case\n- **Rule**: always kebab-case",
+    }
+    const msg = composeBootstrapMessage(data)
+    expect(msg).toContain("Agent Learnings")
+    expect(msg).toContain("Use kebab-case")
+  })
+
+  test("omits agent learnings section when null", () => {
+    const data: BootstrapData = {
+      projectName: "myproject",
+      recentDecisions: [],
+      recentMemories: [],
+      projectNotes: [],
+      activitySummary: null,
+      agentLearnings: null,
+    }
+    const msg = composeBootstrapMessage(data)
+    expect(msg).not.toContain("Agent Learnings")
   })
 })

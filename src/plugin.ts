@@ -1,10 +1,11 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage } from "./bootstrap.js"
+import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, readAgentLearnings } from "./bootstrap.js"
 import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
 import { detectPatterns, writeNewPatterns } from "./patterns.js"
-import { reflect } from "./reflect.js"
+import { reflect, agentLearningsNoteName } from "./reflect.js"
+import { runAgentsEdit } from "./agents-edit.js"
 import { runPromote } from "./promote.js"
 import { runWrap } from "./wrap.js"
 import type { SessionState, BootstrapData } from "./types.js"
@@ -51,6 +52,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           toolCalls: [],
           patternCandidates: new Map(),
           pendingPromotions: new Set(),
+          pendingAgentsEdits: new Set(),
           bootstrappedContext: null,
           idleTimer: null,
         }
@@ -102,16 +104,11 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           if (s.lastReflectionTs && Date.now() - s.lastReflectionTs.getTime() < REFLECTION_DEDUPE_WINDOW) return
 
           s.lastReflectionTs = new Date()
-          reflect(s, client, joplin).then(async () => {
-            const skillsNote = await joplin.getNote("Skills Proposed")
-            const alreadyProposed = new Set(
-              [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
-            )
-            const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
-            await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
-          }).catch(async (err) => {
-            await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
-          })
+          reflect(s, client, joplin)
+            .then(() => runIdleChecks(s, joplin, client))
+            .catch(async (err) => {
+              await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
+            })
         }, IDLE_THRESHOLD_MS)
       }
     },
@@ -127,6 +124,12 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         const sigs = [...state.pendingPromotions].join(", ")
         output.system.push(
           `[personal-agent] Pattern nudge: the following tool patterns have repeated ${PATTERN_THRESHOLD}+ times this session and are ready to promote into skills: ${sigs}. Proactively mention this to the user and offer to run /promote.`
+        )
+      }
+      if (state && state.pendingAgentsEdits.size > 0) {
+        const observed = [...state.pendingAgentsEdits].join("; ")
+        output.system.push(
+          `[personal-agent] Agent learning nudge: the following cross-session learnings are ready to apply to agent-learnings.md: ${observed}. Proactively mention this to the user and offer to run /agents-edit.`
         )
       }
     },
@@ -194,7 +197,58 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         }
         return
       }
+
+      if (input.command === "agents-edit") {
+        const state = sessions.get(input.sessionID)
+        const args = (input as any).args ?? ""
+        const cwd = process.cwd()
+        try {
+          const result = await runAgentsEdit(
+            args,
+            input.sessionID,
+            cwd,
+            joplin,
+            state?.pendingAgentsEdits ?? new Set(),
+          )
+          output.parts.push({ type: "text", text: result } as any)
+        } catch (err) {
+          output.parts.push({ type: "text", text: `personal-agent: /agents-edit failed — ${String(err)}` } as any)
+        }
+        return
+      }
     },
+  }
+}
+
+async function runIdleChecks(
+  s: SessionState,
+  joplin: JoplinClient,
+  client: any,
+): Promise<void> {
+  const skillsNote = await joplin.getNote("Skills Proposed")
+  const alreadyProposed = new Set(
+    [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
+  )
+  const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
+  await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
+
+  const now = new Date()
+  const learningsNote = await joplin.getNote(agentLearningsNoteName(now))
+  if (learningsNote?.body) {
+    const sections = learningsNote.body.split(/\n(?=## )/)
+    for (const section of sections) {
+      const statusMatch = section.match(/\*\*Status\*\*: (\S+)/)
+      const observedMatch = section.match(/\*\*Observed\*\*: (.+)/)
+      if (statusMatch?.[1] === "proposed_agents_edit" && observedMatch) {
+        const observed = observedMatch[1].trim()
+        if (!s.pendingAgentsEdits.has(observed)) {
+          s.pendingAgentsEdits.add(observed)
+          await client.app.log({
+            body: { service: "personal-agent", level: "info", message: `agents-edit flagged: ${observed}`, extra: {} },
+          })
+        }
+      }
+    }
   }
 }
 
@@ -205,11 +259,13 @@ async function gatherBootstrapData(
 ): Promise<BootstrapData> {
   const now = new Date()
   const projectName = detectProject(cwd, PROJECT_MAP)
-  const [decisionsNote, memoriesNote, projectNotes, activities] = await Promise.all([
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp"
+  const [decisionsNote, memoriesNote, projectNotes, activities, agentLearnings] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
     joplin.getNote(memoriesNoteName(now)),
     joplin.searchNotes(`+${projectName}`, 5),
     memory.getTodayActivities(),
+    readAgentLearnings(home),
   ])
   return {
     projectName,
@@ -217,5 +273,6 @@ async function gatherBootstrapData(
     recentMemories: memoriesNote ? JoplinClient.parseDecisionLines(memoriesNote.body, 7, now) : [],
     projectNotes: projectNotes.slice(0, 5).map(n => `${n.title} \u2014 ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
+    agentLearnings,
   }
 }
