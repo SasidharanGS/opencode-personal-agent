@@ -62,48 +62,49 @@ When implemented, you'll need:
 
 ## Quickstart
 
-Phases 1–5 are shipped. The plugin is installed as a git package (same model superpowers uses) so it shows up by name in the opencode TUI.
+### 1. Add the plugin to `~/.config/opencode/opencode.jsonc`
 
-```bash
-# 1. Add the plugin to your opencode config.
-#    Edit ~/.config/opencode/opencode.jsonc and append to the "plugin" array:
-#
-#    "plugin": [
-#      "opencode-personal-agent@git+https://github.com/SasidharanGS/opencode-personal-agent.git"
-#    ]
-#
-#    opencode will run `bun install` on next launch, clone the repo, and
-#    auto-run the `prepare` script to build dist/plugin.js. No manual build.
-
-# 2. Install the skills and slash commands.
-#    These are side-files that the plugin doesn't ship through npm, so we
-#    copy them into ~/.config/opencode/skills and ~/.config/opencode/commands.
-git clone https://github.com/SasidharanGS/opencode-personal-agent.git
-cd opencode-personal-agent
-bun install
-bun run install-extras
-
-# What install-extras does:
-#   - removes any stale personal-agent.js dropped in ~/.config/opencode/plugins
-#   - copies skills/<name>/SKILL.md  -> ~/.config/opencode/skills/<name>/SKILL.md
-#   - copies commands/<name>.md      -> ~/.config/opencode/commands/<name>.md
-#
-# Re-run `bun run install-extras` after pulling updates that change skills/commands.
-# The plugin code itself updates automatically when opencode reinstalls the git dep.
+```jsonc
+{
+  "plugin": [
+    "opencode-personal-agent@git+https://github.com/SasidharanGS/opencode-personal-agent.git"
+  ]
+}
 ```
 
-Configure via env vars (or put them in `opencode.jsonc`):
+opencode clones the repo into its package cache and loads the bundled `dist/plugin.js` on next launch. On first load the plugin copies its bundled skills (`/wrap`, `/promote`, `/agents-edit`) and slash command files into `~/.config/opencode/skills/` and `~/.config/opencode/commands/` — only when they don't already exist, so user edits are never clobbered. Set `OPENCODE_PA_SKIP_AUTO_INSTALL=1` to disable that.
+
+### 2. Configure
+
+Set these as environment variables, or put them in `opencode.jsonc` under `env`:
 
 ```bash
+# Required for background reflection and /wrap:
 export OPENCODE_PA_LLM_URL="https://your-openai-compatible-endpoint/v1"
 export OPENCODE_PA_LLM_KEY="..."
 export OPENCODE_PA_LLM_MODEL="claude-sonnet-4-6"
-export OPENCODE_PA_MEMORY_URL="http://127.0.0.1:7842"   # optional
-export OPENCODE_PA_JOPLIN_NOTEBOOK="Second Brain"       # or whatever you use
-export JOPLIN_TOKEN="..."                                # from Joplin Web Clipper
+
+# Required for silent Joplin writes:
+export JOPLIN_TOKEN="..."                          # from Joplin Web Clipper
+export OPENCODE_PA_JOPLIN_NOTEBOOK="Second Brain"  # or whatever you use
+
+# Optional — ambient memory backend (2brn / Mem0 / Letta / custom):
+export OPENCODE_PA_MEMORY_URL="http://127.0.0.1:7842"
 ```
 
-Then just run opencode normally — `/wrap`, `/promote`, and `/agents-edit` will be available.
+### 3. Restart opencode
+
+`/wrap`, `/promote`, and `/agents-edit` will be available. Idle reflection runs every ~3 minutes in the background.
+
+### Updating
+
+opencode caches the git package at `~/.cache/opencode/packages/opencode-personal-agent*`. To pull the latest from `main`:
+
+```bash
+rm -rf ~/.cache/opencode/packages/opencode-personal-agent*
+```
+
+…and restart opencode. The plugin will re-clone, and any new skills/commands will be auto-installed on next load.
 
 ---
 
