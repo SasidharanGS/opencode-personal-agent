@@ -125,9 +125,15 @@ export function patchAgentLearningsFile(
   existingContent: string,
   llmPatch: string,
 ): string {
-  if (!existingContent.trim() && !llmPatch.includes("# Agent Learnings")) {
-    const skeleton = AGENT_LEARNINGS_SKELETON.replace("{DATE}", new Date().toISOString().slice(0, 10))
-    return skeleton + "\n" + llmPatch
+  if (!llmPatch.includes("# Agent Learnings")) {
+    // LLM returned a bare snippet — wrap in skeleton (new file) or append to existing
+    if (!existingContent.trim()) {
+      const skeleton = AGENT_LEARNINGS_SKELETON.replace("{DATE}", new Date().toISOString().slice(0, 10))
+      return skeleton + "\n" + llmPatch
+    }
+    // Existing file present but patch is partial — don't overwrite; return existing unchanged
+    // Caller should handle this (it's an LLM quality issue)
+    return existingContent
   }
   return llmPatch
 }
@@ -228,6 +234,7 @@ export async function runAgentsEdit(
 
     let patch: string
     try {
+      // Re-generates patch — may differ slightly from preview; acceptable for v1
       patch = await generatePatch(entry, existingContent, editInstruction)
     } catch (err) {
       return `LLM unavailable — can't generate patch. Try again when endpoint is up. (${String(err)})`
@@ -265,11 +272,16 @@ export async function runAgentsEdit(
   const globalPath = resolveAgentLearningsPath("global", cwd, home)
   const projectPath = resolveAgentLearningsPath("project", cwd, home)
 
+  // Preview mode — try project-local file first, fall back to global
   let existingContent = ""
   try {
-    existingContent = await fs.readFile(globalPath, "utf-8")
+    existingContent = await fs.readFile(projectPath, "utf-8")
   } catch {
-    // file doesn't exist yet
+    try {
+      existingContent = await fs.readFile(globalPath, "utf-8")
+    } catch {
+      // neither exists — start fresh
+    }
   }
 
   let patch: string

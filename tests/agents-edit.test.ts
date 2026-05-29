@@ -152,14 +152,20 @@ describe("patchAgentLearningsFile", () => {
     expect(patchAgentLearningsFile("", patch)).toBe(patch)
   })
 
-  test("wraps in skeleton when existing content empty and patch has no headers", () => {
+  test("wraps in skeleton when content is empty and patch has no headers", () => {
     const result = patchAgentLearningsFile("", "### Use kebab-case\n- **Rule**: kebab")
     expect(result).toContain("# Agent Learnings")
     expect(result).toContain("Auto-maintained")
     expect(result).toContain("Use kebab-case")
   })
 
-  test("returns llmPatch directly when existing content is present", () => {
+  test("returns existing content when patch is partial and file already exists", () => {
+    const existing = "# Agent Learnings\n\n## Behavioral Rules\n"
+    const partial = "### Just a snippet\n- **Rule**: foo"
+    expect(patchAgentLearningsFile(existing, partial)).toBe(existing)
+  })
+
+  test("returns llmPatch directly when existing content is present and patch is full", () => {
     const existing = "# Agent Learnings\n\n## Behavioral Rules\n"
     const patch = "# Agent Learnings\n\n## Behavioral Rules\n\n### New rule\n- **Rule**: foo\n"
     expect(patchAgentLearningsFile(existing, patch)).toBe(patch)
