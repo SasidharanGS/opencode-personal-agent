@@ -4,8 +4,8 @@ node_modules/
 .pnp.js
 .pnp.cjs
 
-# Build output
-dist/
+# Build output — keep dist/ committed because opencode loads the bundle from
+# the git checkout (no install-time build). Source-only outputs stay ignored.
 build/
 out/
 *.tsbuildinfo
