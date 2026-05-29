@@ -125,7 +125,7 @@ export function patchAgentLearningsFile(
   existingContent: string,
   llmPatch: string,
 ): string {
-  if (!existingContent.trim()) {
+  if (!existingContent.trim() && !llmPatch.includes("# Agent Learnings")) {
     const skeleton = AGENT_LEARNINGS_SKELETON.replace("{DATE}", new Date().toISOString().slice(0, 10))
     return skeleton + "\n" + llmPatch
   }
@@ -254,6 +254,10 @@ export async function runAgentsEdit(
 
     pendingAgentsEdits.delete(entry.observed)
     return `Written to ${filePath}. Agent learnings updated.`
+  }
+
+  if (confirmFlag && !scopeFlag) {
+    return "Scope required for confirm. Use --scope=global or --scope=project."
   }
 
   // Preview mode — generate patch and return AGENTS_EDIT_CANDIDATE block

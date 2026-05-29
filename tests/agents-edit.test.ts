@@ -147,7 +147,12 @@ describe("buildAgentsMdPrompt", () => {
 })
 
 describe("patchAgentLearningsFile", () => {
-  test("wraps in skeleton when existing content is empty", () => {
+  test("returns llmPatch directly when it already contains # Agent Learnings", () => {
+    const patch = "# Agent Learnings\n\n## Behavioral Rules\n\n### New rule\n- **Rule**: foo\n"
+    expect(patchAgentLearningsFile("", patch)).toBe(patch)
+  })
+
+  test("wraps in skeleton when existing content empty and patch has no headers", () => {
     const result = patchAgentLearningsFile("", "### Use kebab-case\n- **Rule**: kebab")
     expect(result).toContain("# Agent Learnings")
     expect(result).toContain("Auto-maintained")
