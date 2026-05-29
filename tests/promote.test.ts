@@ -85,4 +85,12 @@ describe("buildPromotePrompt", () => {
     expect(prompt).toContain("bash")
     expect(prompt).toContain("4")
   })
+
+  test("instructs the model to emit YAML frontmatter (name + description)", () => {
+    const prompt = buildPromotePrompt({ sig: "bash:git status", tool: "bash", hits: 4 })
+    expect(prompt).toContain("---")
+    expect(prompt).toContain("name:")
+    expect(prompt).toContain("description:")
+    expect(prompt).toMatch(/frontmatter/i)
+  })
 })

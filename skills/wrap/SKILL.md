@@ -1,3 +1,8 @@
+---
+name: wrap
+description: "Use at the end of a work session, after a milestone, or when you want to see what the personal-agent has saved to Joplin. Runs an immediate reflection and shows what was written plus any pending skill or AGENTS.md proposals."
+---
+
 # /wrap
 
 Wrap up the current opencode session: run an immediate reflection, then show a summary of what was saved and what's pending.

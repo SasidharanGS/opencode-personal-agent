@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun build src/plugin.ts --outdir dist --format esm --target node",
+    "deploy": "bash scripts/deploy-plugin.sh"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "latest",

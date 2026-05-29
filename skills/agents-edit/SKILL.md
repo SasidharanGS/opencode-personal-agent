@@ -1,3 +1,8 @@
+---
+name: agents-edit
+description: "Use when the personal-agent surfaces a cross-session learning ready to be applied, or when /wrap output lists an AGENTS.md proposal. Reviews the LLM-generated patch and applies it to agent-learnings.md after user approval."
+---
+
 # /agents-edit
 
 Review and apply a cross-session agent learning to `agent-learnings.md`.
