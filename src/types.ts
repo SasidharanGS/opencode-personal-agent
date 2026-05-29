@@ -6,6 +6,7 @@ export interface SessionState {
   toolCalls: ToolCall[]
   patternCandidates: Map<string, number>
   pendingPromotions: Set<string>
+  pendingAgentsEdits: Set<string>
   bootstrappedContext: string | null
   idleTimer: ReturnType<typeof setTimeout> | null
 }
@@ -20,6 +21,14 @@ export interface PatternCandidate {
   sig: string
   tool: string
   hits: number
+}
+
+export interface AgentLearningEntry {
+  observed: string
+  type: string
+  crossSessionCount: number
+  projectTag: string | null
+  status: string
 }
 
 export interface JoplinNote {
@@ -40,6 +49,7 @@ export interface BootstrapData {
   recentMemories: string[]
   projectNotes: string[]
   activitySummary: string | null
+  agentLearnings: string | null
 }
 
 export interface MemoryActivity {

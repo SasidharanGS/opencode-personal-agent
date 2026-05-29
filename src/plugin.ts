@@ -51,6 +51,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           toolCalls: [],
           patternCandidates: new Map(),
           pendingPromotions: new Set(),
+          pendingAgentsEdits: new Set(),
           bootstrappedContext: null,
           idleTimer: null,
         }
@@ -217,5 +218,6 @@ async function gatherBootstrapData(
     recentMemories: memoriesNote ? JoplinClient.parseDecisionLines(memoriesNote.body, 7, now) : [],
     projectNotes: projectNotes.slice(0, 5).map(n => `${n.title} \u2014 ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
+    agentLearnings: null,
   }
 }

@@ -43,6 +43,7 @@ describe("composeBootstrapMessage", () => {
     recentMemories: ["2026-05-21 \u2014 Merged PR \u2014 public release done"],
     projectNotes: ["Design spec \u2014 full spec for v1 plugin"],
     activitySummary: "VS Code, Terminal, Joplin",
+    agentLearnings: null,
   }
 
   test("includes project name", () => {
