@@ -78,3 +78,32 @@ describe("composeBootstrapMessage", () => {
     expect(composeBootstrapMessage(baseData).length).toBeLessThan(2400)
   })
 })
+
+describe("composeBootstrapMessage — agent learnings", () => {
+  test("includes agent learnings section when present", () => {
+    const data: BootstrapData = {
+      projectName: "myproject",
+      recentDecisions: [],
+      recentMemories: [],
+      projectNotes: [],
+      activitySummary: null,
+      agentLearnings: "## Behavioral Rules\n\n### Use kebab-case\n- **Rule**: always kebab-case",
+    }
+    const msg = composeBootstrapMessage(data)
+    expect(msg).toContain("Agent Learnings")
+    expect(msg).toContain("Use kebab-case")
+  })
+
+  test("omits agent learnings section when null", () => {
+    const data: BootstrapData = {
+      projectName: "myproject",
+      recentDecisions: [],
+      recentMemories: [],
+      projectNotes: [],
+      activitySummary: null,
+      agentLearnings: null,
+    }
+    const msg = composeBootstrapMessage(data)
+    expect(msg).not.toContain("Agent Learnings")
+  })
+})

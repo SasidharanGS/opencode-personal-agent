@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage } from "./bootstrap.js"
+import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, readAgentLearnings } from "./bootstrap.js"
 import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
@@ -206,11 +206,13 @@ async function gatherBootstrapData(
 ): Promise<BootstrapData> {
   const now = new Date()
   const projectName = detectProject(cwd, PROJECT_MAP)
-  const [decisionsNote, memoriesNote, projectNotes, activities] = await Promise.all([
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? ""
+  const [decisionsNote, memoriesNote, projectNotes, activities, agentLearnings] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
     joplin.getNote(memoriesNoteName(now)),
     joplin.searchNotes(`+${projectName}`, 5),
     memory.getTodayActivities(),
+    readAgentLearnings(home),
   ])
   return {
     projectName,
@@ -218,6 +220,6 @@ async function gatherBootstrapData(
     recentMemories: memoriesNote ? JoplinClient.parseDecisionLines(memoriesNote.body, 7, now) : [],
     projectNotes: projectNotes.slice(0, 5).map(n => `${n.title} \u2014 ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
-    agentLearnings: null,
+    agentLearnings,
   }
 }

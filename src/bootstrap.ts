@@ -1,3 +1,5 @@
+import * as fs from "node:fs/promises"
+import * as nodePath from "node:path"
 import type { BootstrapData } from "./types.js"
 
 export function detectProject(cwd: string, projectMap: Record<string, string>): string {
@@ -33,6 +35,15 @@ export function memoriesNoteName(date: Date): string {
   return `Memories \u2014 ${y}-${m}`
 }
 
+export async function readAgentLearnings(home: string): Promise<string | null> {
+  try {
+    const path = nodePath.join(home, ".config", "opencode", "agent-learnings.md")
+    return await fs.readFile(path, "utf-8")
+  } catch {
+    return null
+  }
+}
+
 export function composeBootstrapMessage(data: BootstrapData): string {
   const lines: string[] = ["## Memory bootstrap", ""]
   lines.push(`**Active project (from cwd)**: ${data.projectName}`)
@@ -53,6 +64,11 @@ export function composeBootstrapMessage(data: BootstrapData): string {
   if (data.projectNotes.length > 0) {
     lines.push("### Project-tagged notes (last 7 days)")
     for (const n of data.projectNotes) lines.push(`- ${n}`)
+    lines.push("")
+  }
+  if (data.agentLearnings) {
+    lines.push("### Agent Learnings")
+    lines.push(data.agentLearnings)
     lines.push("")
   }
   lines.push("_End memory bootstrap. Continue normally._")
