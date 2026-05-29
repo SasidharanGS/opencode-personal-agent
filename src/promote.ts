@@ -65,13 +65,21 @@ Pattern details:
 - Tool: ${candidate.tool}
 - Times repeated this session: ${candidate.hits}
 
-Write a SKILL.md file for this pattern. The skill should:
-1. Have a short title matching the pattern
-2. Explain when to use this skill (1-2 sentences)
-3. Show the exact command or action to perform
-4. Include any important notes or caveats
+Write a SKILL.md file for this pattern. opencode requires YAML frontmatter at the top.
 
-Format:
+The skill should:
+1. Have a YAML frontmatter block with kebab-case "name" and a "description" describing when to use it
+2. Have a short title matching the pattern
+3. Explain when to use this skill (1-2 sentences)
+4. Show the exact command or action to perform
+5. Include any important notes or caveats
+
+Format (literal — keep the --- delimiters and field names exactly):
+---
+name: <kebab-case-name-derived-from-signature>
+description: "<1-2 sentence trigger description — when should an agent invoke this skill>"
+---
+
 # <skill title>
 
 ## When to use
@@ -86,7 +94,7 @@ Format:
 ## Notes
 <any caveats>
 
-Output only the SKILL.md content, no prose before or after.`
+Output only the SKILL.md content (starting with the --- frontmatter line), no prose before or after.`
 }
 
 export async function generateSkillMd(candidate: PatternCandidate): Promise<string> {

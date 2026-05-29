@@ -1,3 +1,8 @@
+---
+name: promote
+description: "Use when the personal-agent surfaces a repeated tool pattern (3+ hits) or when /wrap output lists a skill candidate. Turns the pattern into a reusable opencode skill via LLM-drafted SKILL.md."
+---
+
 # /promote
 
 Turn a repeated tool pattern into a reusable opencode skill.

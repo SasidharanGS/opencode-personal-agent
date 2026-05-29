@@ -8,9 +8,9 @@
 
 ---
 
-## Status: Design phase
+## Status: All five phases shipped
 
-**No code has shipped yet.** This repository currently holds the design specification, architecture, and adapter contracts. Implementation will land as commits against the phases described in [`docs/design.md`](./docs/design.md).
+The plugin, three slash commands (`/wrap`, `/promote`, `/agents-edit`), idle reflection, pattern detection, and cross-session learnings are all implemented and on `main`. See [`docs/design.md`](./docs/design.md) for the spec.
 
 If you'd like to follow along, watch the repo or open a discussion.
 
@@ -60,27 +60,40 @@ When implemented, you'll need:
 
 ---
 
-## Quickstart (placeholder — Phase 1 not shipped yet)
+## Quickstart
+
+Phases 1–5 are shipped. To install:
 
 ```bash
-# Will work after Phase 1 ships:
-cd ~/.config/opencode/plugins
+# 1. Clone anywhere on your machine.
 git clone https://github.com/SasidharanGS/opencode-personal-agent.git
-# Then symlink or copy the plugin file:
-ln -s opencode-personal-agent/dist/personal-agent.js .
+cd opencode-personal-agent
 
-# Set env vars (or put in opencode.jsonc):
-export OPENCODE_PA_LLM_URL="https://your-openai-compatible-endpoint/v1"
-export OPENCODE_PA_LLM_KEY="..."
-export OPENCODE_PA_LLM_MODEL="claude-3-5-sonnet"
-export OPENCODE_PA_MEMORY_URL="http://127.0.0.1:7842"   # optional
-export OPENCODE_PA_JOPLIN_NOTEBOOK="Second Brain"       # or whatever you use
+# 2. Install dev deps and build + deploy the plugin.
+bun install
+bun run deploy
 
-# Then just run opencode normally:
-opencode
+# What this does:
+#   - bun build src/plugin.ts -> dist/plugin.js
+#   - copies dist/plugin.js          -> ~/.config/opencode/plugins/personal-agent.js
+#   - copies skills/<name>/SKILL.md  -> ~/.config/opencode/skills/<name>/SKILL.md
+#   - copies commands/<name>.md      -> ~/.config/opencode/commands/<name>.md
+#
+# Re-run `bun run deploy` after pulling updates.
 ```
 
-Until then, the [design spec](./docs/design.md) is the canonical reference.
+Configure via env vars (or put them in `opencode.jsonc`):
+
+```bash
+export OPENCODE_PA_LLM_URL="https://your-openai-compatible-endpoint/v1"
+export OPENCODE_PA_LLM_KEY="..."
+export OPENCODE_PA_LLM_MODEL="claude-sonnet-4-6"
+export OPENCODE_PA_MEMORY_URL="http://127.0.0.1:7842"   # optional
+export OPENCODE_PA_JOPLIN_NOTEBOOK="Second Brain"       # or whatever you use
+export JOPLIN_TOKEN="..."                                # from Joplin Web Clipper
+```
+
+Then just run opencode normally — `/wrap`, `/promote`, and `/agents-edit` will be available.
 
 ---
 
@@ -90,11 +103,11 @@ Implementation lands in five phases. Each phase is independently useful.
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 1 | Plugin scaffold + session.created memory bootstrap | **Shipped (awaiting review)** |
-| 2 | Idle watcher + background reflection (silent Joplin writes) | **Shipped (awaiting review)** |
-| 3 | `/wrap` slash skill (session summary) | **Shipped (awaiting review)** |
-| 4 | Pattern detection + `/promote` slash skill | Not started |
-| 5 | Cross-session learnings + `/agents-edit` slash skill | Not started |
+| 1 | Plugin scaffold + session.created memory bootstrap | **Shipped** |
+| 2 | Idle watcher + background reflection (silent Joplin writes) | **Shipped** |
+| 3 | `/wrap` slash skill (session summary) | **Shipped** |
+| 4 | Pattern detection + `/promote` slash skill | **Shipped** |
+| 5 | Cross-session learnings + `/agents-edit` slash skill | **Shipped** |
 
 Each phase has explicit acceptance criteria in [`docs/design.md` § 9](./docs/design.md#9-implementation-phases).
 
@@ -124,7 +137,7 @@ These are intentionally non-negotiable:
 
 ## Contributing
 
-This is currently a one-person design project, in the design phase. Once Phase 1 lands, contributions will be welcome via PRs and issues.
+This is currently a one-person project. Contributions welcome via PRs and issues.
 
 For now, the most useful contribution is feedback on the design spec — open a GitHub Discussion or Issue with comments/critique.
 
