@@ -4,7 +4,7 @@ import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
 import { detectPatterns, writeNewPatterns } from "./patterns.js"
-import { reflect } from "./reflect.js"
+import { reflect, agentLearningsNoteName } from "./reflect.js"
 import { runAgentsEdit } from "./agents-edit.js"
 import { runPromote } from "./promote.js"
 import { runWrap } from "./wrap.js"
@@ -104,35 +104,11 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           if (s.lastReflectionTs && Date.now() - s.lastReflectionTs.getTime() < REFLECTION_DEDUPE_WINDOW) return
 
           s.lastReflectionTs = new Date()
-          reflect(s, client, joplin).then(async () => {
-            const skillsNote = await joplin.getNote("Skills Proposed")
-            const alreadyProposed = new Set(
-              [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
-            )
-            const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
-            await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
-            const now = new Date()
-            const learningsNoteName = `Agent Learnings \u2014 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-            const learningsNote = await joplin.getNote(learningsNoteName)
-            if (learningsNote?.body) {
-              const sections = learningsNote.body.split(/\n(?=## )/)
-              for (const section of sections) {
-                const statusMatch = section.match(/\*\*Status\*\*: (\S+)/)
-                const observedMatch = section.match(/\*\*Observed\*\*: (.+)/)
-                if (statusMatch?.[1] === "proposed_agents_edit" && observedMatch) {
-                  const observed = observedMatch[1].trim()
-                  if (!s.pendingAgentsEdits.has(observed)) {
-                    s.pendingAgentsEdits.add(observed)
-                    await client.app.log({
-                      body: { service: "personal-agent", level: "info", message: `agents-edit flagged: ${observed}`, extra: {} },
-                    })
-                  }
-                }
-              }
-            }
-          }).catch(async (err) => {
-            await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
-          })
+          reflect(s, client, joplin)
+            .then(() => runIdleChecks(s, joplin, client))
+            .catch(async (err) => {
+              await client.app.log({ body: { service: "personal-agent", level: "warn", message: "reflect/pattern error", extra: { error: String(err) } } })
+            })
         }, IDLE_THRESHOLD_MS)
       }
     },
@@ -241,6 +217,38 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         return
       }
     },
+  }
+}
+
+async function runIdleChecks(
+  s: SessionState,
+  joplin: JoplinClient,
+  client: any,
+): Promise<void> {
+  const skillsNote = await joplin.getNote("Skills Proposed")
+  const alreadyProposed = new Set(
+    [...(skillsNote?.body ?? "").matchAll(/^## (.+?) — proposed/gm)].map((m: RegExpMatchArray) => m[1])
+  )
+  const candidates = detectPatterns(s.patternCandidates, alreadyProposed, PATTERN_THRESHOLD)
+  await writeNewPatterns(candidates, joplin, JOPLIN_NOTEBOOK)
+
+  const now = new Date()
+  const learningsNote = await joplin.getNote(agentLearningsNoteName(now))
+  if (learningsNote?.body) {
+    const sections = learningsNote.body.split(/\n(?=## )/)
+    for (const section of sections) {
+      const statusMatch = section.match(/\*\*Status\*\*: (\S+)/)
+      const observedMatch = section.match(/\*\*Observed\*\*: (.+)/)
+      if (statusMatch?.[1] === "proposed_agents_edit" && observedMatch) {
+        const observed = observedMatch[1].trim()
+        if (!s.pendingAgentsEdits.has(observed)) {
+          s.pendingAgentsEdits.add(observed)
+          await client.app.log({
+            body: { service: "personal-agent", level: "info", message: `agents-edit flagged: ${observed}`, extra: {} },
+          })
+        }
+      }
+    }
   }
 }
 
