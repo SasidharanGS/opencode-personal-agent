@@ -62,24 +62,34 @@ When implemented, you'll need:
 
 ## Quickstart
 
-Phases 1–5 are shipped. To install:
+Phases 1–5 are shipped. The plugin is installed as a git package (same model superpowers uses) so it shows up by name in the opencode TUI.
 
 ```bash
-# 1. Clone anywhere on your machine.
+# 1. Add the plugin to your opencode config.
+#    Edit ~/.config/opencode/opencode.jsonc and append to the "plugin" array:
+#
+#    "plugin": [
+#      "opencode-personal-agent@git+https://github.com/SasidharanGS/opencode-personal-agent.git"
+#    ]
+#
+#    opencode will run `bun install` on next launch, clone the repo, and
+#    auto-run the `prepare` script to build dist/plugin.js. No manual build.
+
+# 2. Install the skills and slash commands.
+#    These are side-files that the plugin doesn't ship through npm, so we
+#    copy them into ~/.config/opencode/skills and ~/.config/opencode/commands.
 git clone https://github.com/SasidharanGS/opencode-personal-agent.git
 cd opencode-personal-agent
-
-# 2. Install dev deps and build + deploy the plugin.
 bun install
-bun run deploy
+bun run install-extras
 
-# What this does:
-#   - bun build src/plugin.ts -> dist/plugin.js
-#   - copies dist/plugin.js          -> ~/.config/opencode/plugins/personal-agent.js
+# What install-extras does:
+#   - removes any stale personal-agent.js dropped in ~/.config/opencode/plugins
 #   - copies skills/<name>/SKILL.md  -> ~/.config/opencode/skills/<name>/SKILL.md
 #   - copies commands/<name>.md      -> ~/.config/opencode/commands/<name>.md
 #
-# Re-run `bun run deploy` after pulling updates.
+# Re-run `bun run install-extras` after pulling updates that change skills/commands.
+# The plugin code itself updates automatically when opencode reinstalls the git dep.
 ```
 
 Configure via env vars (or put them in `opencode.jsonc`):
