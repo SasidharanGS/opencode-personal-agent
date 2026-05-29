@@ -206,7 +206,7 @@ async function gatherBootstrapData(
 ): Promise<BootstrapData> {
   const now = new Date()
   const projectName = detectProject(cwd, PROJECT_MAP)
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? ""
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp"
   const [decisionsNote, memoriesNote, projectNotes, activities, agentLearnings] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
     joplin.getNote(memoriesNoteName(now)),
