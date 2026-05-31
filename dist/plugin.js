@@ -501,6 +501,20 @@ function renderLearning(l, now, crossSessionCount, sessionId) {
 
 ---`;
 }
+function renderProjectNoteEntry(type, title, summary, now, sessionId) {
+  const ts = now.toISOString().slice(0, 16).replace("T", " ");
+  return `## ${ts} — ${title}
+
+**Type**: ${type}
+**Summary**: ${summary}
+
+**Recorded by**: agent (session ${sessionId})
+
+---`;
+}
+function projectNoteName(projectTag) {
+  return `Project Notes — ${projectTag}`;
+}
 function agentLearningsNoteName(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -553,9 +567,17 @@ async function reflect(state, client, joplin) {
   const result = parseReflectionJson(raw);
   for (const d of result.decisions) {
     await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK);
+    if (d.project_tag) {
+      const entry = renderProjectNoteEntry("decision", d.title, d.decision, now, state.sessionId);
+      await joplin.appendToNote(projectNoteName(d.project_tag), entry, JOPLIN_NOTEBOOK, d.project_tag);
+    }
   }
   for (const m of result.memories) {
     await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK);
+    if (m.project_tag) {
+      const entry = renderProjectNoteEntry("memory", m.title, m.what_happened.slice(0, 120), now, state.sessionId);
+      await joplin.appendToNote(projectNoteName(m.project_tag), entry, JOPLIN_NOTEBOOK, m.project_tag);
+    }
   }
   const learningNoteName = agentLearningsNoteName(now);
   for (const l of result.agent_learnings) {
