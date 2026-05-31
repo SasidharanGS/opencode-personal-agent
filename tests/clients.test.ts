@@ -127,3 +127,61 @@ describe("MemoryClient", () => {
     expect(MemoryClient.summarizeActivities([])).toBeNull()
   })
 })
+
+describe("JoplinClient tag methods", () => {
+  test("ensureTag returns null on fetch error", async () => {
+    const client = new JoplinClient("http://127.0.0.1:1", "bad-token")
+    expect(await client.ensureTag("my-project")).toBeNull()
+  })
+
+  test("ensureTag returns existing tag id when found", async () => {
+    const origFetch = globalThis.fetch
+    let callCount = 0
+    globalThis.fetch = async (url: any) => {
+      callCount++
+      return {
+        ok: true,
+        json: async () => ({ items: [{ id: "tag123", title: "my-project" }] }),
+      } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    const id = await client.ensureTag("my-project")
+    globalThis.fetch = origFetch
+    expect(id).toBe("tag123")
+    expect(callCount).toBe(1)
+  })
+
+  test("ensureTag creates tag when not found and returns new id", async () => {
+    const origFetch = globalThis.fetch
+    const calls: string[] = []
+    globalThis.fetch = async (url: any, opts?: any) => {
+      calls.push(opts?.method ?? "GET")
+      if (calls.length === 1) return { ok: true, json: async () => ({ items: [] }) } as any
+      return { ok: true, json: async () => ({ id: "newtag", title: "my-project" }) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    const id = await client.ensureTag("my-project")
+    globalThis.fetch = origFetch
+    expect(id).toBe("newtag")
+    expect(calls).toEqual(["GET", "POST"])
+  })
+
+  test("applyTag returns false on fetch error", async () => {
+    const client = new JoplinClient("http://127.0.0.1:1", "bad-token")
+    expect(await client.applyTag("tagid", "noteid")).toBe(false)
+  })
+
+  test("applyTag calls POST /tags/:id/notes", async () => {
+    let capturedUrl = ""
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any) => {
+      capturedUrl = String(url)
+      return { ok: true, json: async () => ({}) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    const result = await client.applyTag("tag123", "note456")
+    globalThis.fetch = origFetch
+    expect(result).toBe(true)
+    expect(capturedUrl).toContain("/tags/tag123/notes")
+  })
+})

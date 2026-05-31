@@ -45,6 +45,11 @@ export interface JoplinFolder {
   title: string
 }
 
+export interface JoplinTag {
+  id: string
+  title: string
+}
+
 export interface BootstrapData {
   projectName: string
   recentDecisions: string[]

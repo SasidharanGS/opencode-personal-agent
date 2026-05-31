@@ -122,7 +122,7 @@ class JoplinClient {
       return [];
     }
   }
-  async appendToNote(titleOrId, content, notebook) {
+  async appendToNote(titleOrId, content, notebook, projectTag) {
     try {
       const note = await this.getNote(titleOrId);
       if (note) {
@@ -134,9 +134,14 @@ class JoplinClient {
 ` + content }),
           signal: AbortSignal.timeout(1e4)
         });
+        if (res.ok && projectTag) {
+          const tagId = await this.ensureTag(projectTag);
+          if (tagId)
+            await this.applyTag(tagId, note.id);
+        }
         return res.ok;
       }
-      return await this.createNote(titleOrId, content, notebook);
+      return await this.createNote(titleOrId, content, notebook, projectTag);
     } catch {
       return false;
     }
@@ -154,7 +159,7 @@ class JoplinClient {
       return false;
     }
   }
-  async createNote(title, body, notebook) {
+  async createNote(title, body, notebook, projectTag) {
     try {
       const folderId = await this.getFolderId(notebook);
       const res = await fetch(this.url("/notes"), {
@@ -162,6 +167,51 @@ class JoplinClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, ...folderId ? { parent_id: folderId } : {} }),
         signal: AbortSignal.timeout(1e4)
+      });
+      if (!res.ok)
+        return false;
+      if (projectTag) {
+        const created = await res.json();
+        const tagId = await this.ensureTag(projectTag);
+        if (tagId && created?.id)
+          await this.applyTag(tagId, created.id);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async ensureTag(name) {
+    try {
+      const res = await fetch(this.url("/tags", { fields: "id,title", query: name }), { signal: AbortSignal.timeout(5000) });
+      if (!res.ok)
+        return null;
+      const data = await res.json();
+      const tags = data?.items ?? (Array.isArray(data) ? data : []);
+      const existing = tags.find((t) => t.title === name);
+      if (existing)
+        return existing.id;
+      const create = await fetch(this.url("/tags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: name }),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!create.ok)
+        return null;
+      const created = await create.json();
+      return created?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+  async applyTag(tagId, noteId) {
+    try {
+      const res = await fetch(this.url(`/tags/${tagId}/notes`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: noteId }),
+        signal: AbortSignal.timeout(5000)
       });
       return res.ok;
     } catch {
