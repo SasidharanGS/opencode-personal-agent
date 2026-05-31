@@ -72,6 +72,18 @@ function composeBootstrapMessage(data) {
   return lines.join(`
 `);
 }
+function prevMonth(date) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() - 1);
+  return d;
+}
+function mergeNoteBodies(current, previous) {
+  if (current && previous)
+    return `${current}
+
+${previous}`;
+  return current ?? previous ?? "";
+}
 
 // src/clients/joplin.ts
 class JoplinClient {
@@ -1268,19 +1280,32 @@ async function runIdleChecks(s, joplin, client) {
 }
 async function gatherBootstrapData(joplin, memory, cwd) {
   const now = new Date;
+  const prev = prevMonth(now);
   const projectName = detectProject(cwd, PROJECT_MAP);
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
-  const [decisionsNote, memoriesNote, projectNotes, activities, agentLearnings] = await Promise.all([
+  const [
+    decisionsNote,
+    prevDecisionsNote,
+    memoriesNote,
+    prevMemoriesNote,
+    projectNotes,
+    activities,
+    agentLearnings
+  ] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
+    joplin.getNote(decisionsNoteName(prev)),
     joplin.getNote(memoriesNoteName(now)),
-    joplin.searchNotes(`+${projectName}`, 5),
+    joplin.getNote(memoriesNoteName(prev)),
+    joplin.searchNotes(`tag:${projectName}`, 5),
     memory.getTodayActivities(),
     readAgentLearnings(home)
   ]);
+  const decisionsBody = mergeNoteBodies(decisionsNote?.body ?? null, prevDecisionsNote?.body ?? null);
+  const memoriesBody = mergeNoteBodies(memoriesNote?.body ?? null, prevMemoriesNote?.body ?? null);
   return {
     projectName,
-    recentDecisions: decisionsNote ? JoplinClient.parseDecisionLines(decisionsNote.body, 7, now) : [],
-    recentMemories: memoriesNote ? JoplinClient.parseDecisionLines(memoriesNote.body, 7, now) : [],
+    recentDecisions: JoplinClient.parseDecisionLines(decisionsBody, 7, now),
+    recentMemories: JoplinClient.parseDecisionLines(memoriesBody, 7, now),
     projectNotes: projectNotes.slice(0, 5).map((n) => `${n.title} — ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
     agentLearnings
