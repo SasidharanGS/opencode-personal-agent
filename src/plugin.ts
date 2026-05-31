@@ -139,7 +139,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
       }
 
       if (event.type === "session.idle") {
-        const sessionId: string = (event as any).properties?.info?.id ?? "unknown"
+        const sessionId: string = (event as any).properties?.sessionID ?? "unknown"
         if (sessionId === "unknown") return
         const state = sessions.get(sessionId)
         if (!state) return

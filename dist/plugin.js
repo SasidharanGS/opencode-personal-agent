@@ -1329,7 +1329,7 @@ var PersonalAgent = async ({ client }) => {
         sessions.delete(sessionId);
       }
       if (event.type === "session.idle") {
-        const sessionId = event.properties?.info?.id ?? "unknown";
+        const sessionId = event.properties?.sessionID ?? "unknown";
         if (sessionId === "unknown")
           return;
         const state = sessions.get(sessionId);
