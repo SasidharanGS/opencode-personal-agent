@@ -23,7 +23,9 @@ export class JoplinClient {
         if (!res.ok) return null
         return await res.json() as JoplinNote
       }
-      const results = await this.searchNotes(`"${titleOrId}" notebook:"${notebook}"`, 5)
+      // Strip non-alphanumeric chars so FTS5 tokenizes correctly (em-dashes etc. break phrases)
+      const tokens = titleOrId.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
+      const results = await this.searchNotes(`${tokens} notebook:"${notebook}"`, 10)
       return results.find(n => n.title === titleOrId) ?? null
     } catch {
       return null

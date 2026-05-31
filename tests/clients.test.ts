@@ -47,7 +47,7 @@ describe("JoplinClient error handling", () => {
     expect(capturedUrl).not.toContain("/search")
   })
 
-  test("getNote with title string hits /search with exact phrase", async () => {
+  test("getNote with title string hits /search with tokenized terms", async () => {
     let capturedUrl = ""
     const origFetch = globalThis.fetch
     globalThis.fetch = async (url: any) => {
@@ -59,8 +59,12 @@ describe("JoplinClient error handling", () => {
     globalThis.fetch = origFetch
     const decoded = decodeURIComponent(capturedUrl).replace(/\+/g, " ")
     expect(capturedUrl).toContain("/search")
-    expect(decoded).toContain('"Decisions \u2014 2026-05"')
+    // em-dash is stripped; query uses tokenizable words + notebook scope
+    expect(decoded).toContain("Decisions")
+    expect(decoded).toContain("2026")
     expect(decoded).toContain('notebook:"Second Brain"')
+    // exact phrase with em-dash is NOT used (it breaks FTS5 tokenization)
+    expect(decoded).not.toContain('"Decisions \u2014 2026-05"')
   })
 
   test("getNote returns the correct note when multiple FTS results exist", async () => {

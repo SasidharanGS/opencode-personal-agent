@@ -105,7 +105,8 @@ class JoplinClient {
           return null;
         return await res.json();
       }
-      const results = await this.searchNotes(`"${titleOrId}" notebook:"${notebook}"`, 5);
+      const tokens = titleOrId.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+      const results = await this.searchNotes(`${tokens} notebook:"${notebook}"`, 10);
       return results.find((n) => n.title === titleOrId) ?? null;
     } catch {
       return null;
