@@ -1198,6 +1198,16 @@ var PersonalAgent = async ({ client }) => {
               extra: { project: data.projectName }
             }
           });
+          if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+            await client.app.log({
+              body: {
+                service: "personal-agent",
+                level: "info",
+                message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+                extra: { project: data.projectName }
+              }
+            });
+          }
         }).catch(async (err) => {
           await client.app.log({
             body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } }
