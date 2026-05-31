@@ -56,12 +56,63 @@ export const PersonalAgent: Plugin = async ({ client }) => {
     })
   }
 
+  function initSession(sessionId: string, directory: string): void {
+    if (sessions.has(sessionId)) return
+    const state: SessionState = {
+      sessionId,
+      startedAt: new Date(),
+      lastActivityTs: new Date(),
+      lastReflectionTs: null,
+      toolCalls: [],
+      patternCandidates: new Map(),
+      pendingPromotions: new Set(),
+      pendingAgentsEdits: new Set(),
+      bootstrappedContext: null,
+      idleTimer: null,
+    }
+    sessions.set(sessionId, state)
+
+    gatherBootstrapData(joplin, memory, directory).then(async (data) => {
+      if (!sessions.has(sessionId)) return
+      state.bootstrappedContext = composeBootstrapMessage(data)
+      await client.app.log({
+        body: {
+          service: "personal-agent",
+          level: "info",
+          message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
+          extra: { project: data.projectName },
+        },
+      })
+      if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+        await client.app.log({
+          body: {
+            service: "personal-agent",
+            level: "info",
+            message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+            extra: { project: data.projectName },
+          },
+        })
+      }
+    }).catch(async (err) => {
+      await client.app.log({
+        body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } },
+      })
+    })
+  }
+
+  // Bootstrap any sessions that already existed when the plugin loaded.
+  // The event bus is forward-only — session.created does not replay for
+  // sessions opened before this plugin initialised.
+  client.session.list().then((res) => {
+    const existing = (res as any)?.data ?? []
+    for (const s of existing) {
+      if (s?.id) initSession(s.id, s.directory ?? "")
+    }
+  }).catch(() => {})
+
   return {
     "event": async ({ event }) => {
       if (event.type === "session.created") {
-        // event.properties.info follows the Session type from @opencode-ai/sdk
-        // Accessed via `any` because the plugin's Event union type doesn't expose
-        // the session.created properties shape in the current SDK version.
         const info = (event as any).properties?.info
         const sessionId: string = info?.id ?? "unknown"
         const directory: string = info?.directory ?? ""
@@ -73,50 +124,10 @@ export const PersonalAgent: Plugin = async ({ client }) => {
           return
         }
 
-        const state: SessionState = {
-          sessionId,
-          startedAt: new Date(),
-          lastActivityTs: new Date(),
-          lastReflectionTs: null,
-          toolCalls: [],
-          patternCandidates: new Map(),
-          pendingPromotions: new Set(),
-          pendingAgentsEdits: new Set(),
-          bootstrappedContext: null,
-          idleTimer: null,
-        }
-        sessions.set(sessionId, state)
-
         await client.app.log({
           body: { service: "personal-agent", level: "info", message: "session started", extra: { sessionId } },
         })
-
-        gatherBootstrapData(joplin, memory, directory).then(async (data) => {
-          if (!sessions.has(sessionId)) return
-          state.bootstrappedContext = composeBootstrapMessage(data)
-          await client.app.log({
-            body: {
-              service: "personal-agent",
-              level: "info",
-              message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
-              extra: { project: data.projectName },
-            },
-          })
-          if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
-            await client.app.log({
-              body: {
-                service: "personal-agent",
-                level: "info",
-                message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
-                extra: { project: data.projectName },
-              },
-            })
-          }
-        }).catch(async (err) => {
-          await client.app.log({
-            body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } },
-          })
-        })
+        initSession(sessionId, directory)
       }
 
       if (event.type === "session.deleted") {
@@ -220,7 +231,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
 
       if (input.command === "promote") {
         const state = sessions.get(input.sessionID)
-        const args = (input as any).args ?? ""
+        const args = input.arguments ?? ""
         const cwd = process.cwd()
         try {
           const result = await runPromote(
@@ -239,7 +250,7 @@ export const PersonalAgent: Plugin = async ({ client }) => {
 
       if (input.command === "agents-edit") {
         const state = sessions.get(input.sessionID)
-        const args = (input as any).args ?? ""
+        const args = input.arguments ?? ""
         const cwd = process.cwd()
         try {
           const result = await runAgentsEdit(

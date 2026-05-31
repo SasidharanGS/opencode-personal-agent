@@ -1251,6 +1251,57 @@ var PersonalAgent = async ({ client }) => {
       body: { service: "personal-agent", level: "warn", message: "auto-install of skills/commands failed", extra: { error: String(err) } }
     });
   }
+  function initSession(sessionId, directory) {
+    if (sessions.has(sessionId))
+      return;
+    const state = {
+      sessionId,
+      startedAt: new Date,
+      lastActivityTs: new Date,
+      lastReflectionTs: null,
+      toolCalls: [],
+      patternCandidates: new Map,
+      pendingPromotions: new Set,
+      pendingAgentsEdits: new Set,
+      bootstrappedContext: null,
+      idleTimer: null
+    };
+    sessions.set(sessionId, state);
+    gatherBootstrapData(joplin, memory, directory).then(async (data) => {
+      if (!sessions.has(sessionId))
+        return;
+      state.bootstrappedContext = composeBootstrapMessage(data);
+      await client.app.log({
+        body: {
+          service: "personal-agent",
+          level: "info",
+          message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
+          extra: { project: data.projectName }
+        }
+      });
+      if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+        await client.app.log({
+          body: {
+            service: "personal-agent",
+            level: "info",
+            message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+            extra: { project: data.projectName }
+          }
+        });
+      }
+    }).catch(async (err) => {
+      await client.app.log({
+        body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } }
+      });
+    });
+  }
+  client.session.list().then((res) => {
+    const existing = res?.data ?? [];
+    for (const s of existing) {
+      if (s?.id)
+        initSession(s.id, s.directory ?? "");
+    }
+  }).catch(() => {});
   return {
     event: async ({ event }) => {
       if (event.type === "session.created") {
@@ -1263,49 +1314,10 @@ var PersonalAgent = async ({ client }) => {
           });
           return;
         }
-        const state = {
-          sessionId,
-          startedAt: new Date,
-          lastActivityTs: new Date,
-          lastReflectionTs: null,
-          toolCalls: [],
-          patternCandidates: new Map,
-          pendingPromotions: new Set,
-          pendingAgentsEdits: new Set,
-          bootstrappedContext: null,
-          idleTimer: null
-        };
-        sessions.set(sessionId, state);
         await client.app.log({
           body: { service: "personal-agent", level: "info", message: "session started", extra: { sessionId } }
         });
-        gatherBootstrapData(joplin, memory, directory).then(async (data) => {
-          if (!sessions.has(sessionId))
-            return;
-          state.bootstrappedContext = composeBootstrapMessage(data);
-          await client.app.log({
-            body: {
-              service: "personal-agent",
-              level: "info",
-              message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
-              extra: { project: data.projectName }
-            }
-          });
-          if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
-            await client.app.log({
-              body: {
-                service: "personal-agent",
-                level: "info",
-                message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
-                extra: { project: data.projectName }
-              }
-            });
-          }
-        }).catch(async (err) => {
-          await client.app.log({
-            body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } }
-          });
-        });
+        initSession(sessionId, directory);
       }
       if (event.type === "session.deleted") {
         const sessionId = event.properties?.info?.id ?? "unknown";
@@ -1404,7 +1416,7 @@ var PersonalAgent = async ({ client }) => {
       }
       if (input.command === "promote") {
         const state = sessions.get(input.sessionID);
-        const args = input.args ?? "";
+        const args = input.arguments ?? "";
         const cwd = process.cwd();
         try {
           const result = await runPromote(args, input.sessionID, cwd, joplin, state?.pendingPromotions ?? new Set);
@@ -1416,7 +1428,7 @@ var PersonalAgent = async ({ client }) => {
       }
       if (input.command === "agents-edit") {
         const state = sessions.get(input.sessionID);
-        const args = input.args ?? "";
+        const args = input.arguments ?? "";
         const cwd = process.cwd();
         try {
           const result = await runAgentsEdit(args, input.sessionID, cwd, joplin, state?.pendingAgentsEdits ?? new Set);
