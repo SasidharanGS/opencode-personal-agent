@@ -33,9 +33,65 @@ describe("JoplinClient error handling", () => {
     expect(await client.getNote("Decisions \u2014 2026-05")).toBeNull()
   })
 
-  // getNote uses limit:10 + exact title filter (n.title === titleOrId) to guard against
-  // Joplin's fuzzy full-text search returning a note with a different title.
-  // Full integration verification is deferred to Task 8 (integration tests).
+  test("getNote with 32-char hex id hits /notes/:id directly", async () => {
+    let capturedUrl = ""
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any) => {
+      capturedUrl = String(url)
+      return { ok: false, json: async () => ({}) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    await client.getNote("a".repeat(32))
+    globalThis.fetch = origFetch
+    expect(capturedUrl).toContain("/notes/" + "a".repeat(32))
+    expect(capturedUrl).not.toContain("/search")
+  })
+
+  test("getNote with title string hits /search with exact phrase", async () => {
+    let capturedUrl = ""
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any) => {
+      capturedUrl = String(url)
+      return { ok: true, json: async () => ({ items: [] }) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    await client.getNote("Decisions \u2014 2026-05", "Second Brain")
+    globalThis.fetch = origFetch
+    const decoded = decodeURIComponent(capturedUrl).replace(/\+/g, " ")
+    expect(capturedUrl).toContain("/search")
+    expect(decoded).toContain('"Decisions \u2014 2026-05"')
+    expect(decoded).toContain('notebook:"Second Brain"')
+  })
+
+  test("getNote returns the correct note when multiple FTS results exist", async () => {
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        items: [
+          { id: "wrong", title: "Other Note", body: "", updated_time: 0 },
+          { id: "correct", title: "Decisions \u2014 2026-05", body: "body", updated_time: 1 },
+        ],
+      }),
+    } as any)
+    const client = new JoplinClient("http://example.com", "tok")
+    const result = await client.getNote("Decisions \u2014 2026-05")
+    globalThis.fetch = origFetch
+    expect(result?.id).toBe("correct")
+  })
+
+  test("getNote returns null when title does not match any result", async () => {
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ items: [{ id: "abc", title: "Other Note", body: "", updated_time: 0 }] }),
+    } as any)
+    const client = new JoplinClient("http://example.com", "tok")
+    const result = await client.getNote("Decisions \u2014 2026-05")
+    globalThis.fetch = origFetch
+    expect(result).toBeNull()
+  })
+
   test("searchNotes returns empty array on fetch error", async () => {
     const client = new JoplinClient("http://127.0.0.1:1", "bad-token")
     expect(await client.searchNotes("+myrepo", 5)).toHaveLength(0)

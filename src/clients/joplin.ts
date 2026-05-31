@@ -13,16 +13,18 @@ export class JoplinClient {
     return `${this.baseUrl}${path}?${p}`
   }
 
-  async getNote(titleOrId: string): Promise<JoplinNote | null> {
+  async getNote(titleOrId: string, notebook = "Second Brain"): Promise<JoplinNote | null> {
     try {
-      const res = await fetch(
-        this.url("/notes", { query: titleOrId, fields: "id,title,body,updated_time", limit: 10 }),
-        { signal: AbortSignal.timeout(5_000) }
-      )
-      if (!res.ok) return null
-      const data = await res.json() as any
-      const items: JoplinNote[] = data?.items ?? (Array.isArray(data) ? data : [])
-      return items.find(n => n.title === titleOrId) ?? null
+      if (/^[a-f0-9]{32}$/.test(titleOrId)) {
+        const res = await fetch(
+          this.url(`/notes/${titleOrId}`, { fields: "id,title,body,updated_time" }),
+          { signal: AbortSignal.timeout(5_000) }
+        )
+        if (!res.ok) return null
+        return await res.json() as JoplinNote
+      }
+      const results = await this.searchNotes(`"${titleOrId}" notebook:"${notebook}"`, 5)
+      return results.find(n => n.title === titleOrId) ?? null
     } catch {
       return null
     }
@@ -31,7 +33,7 @@ export class JoplinClient {
   async searchNotes(query: string, limit = 5): Promise<JoplinNote[]> {
     try {
       const res = await fetch(
-        this.url("/notes", { query, fields: "id,title,body,updated_time", limit, order_by: "updated_time", order_dir: "DESC" }),
+        this.url("/search", { query, fields: "id,title,body,updated_time", limit }),
         { signal: AbortSignal.timeout(5_000) }
       )
       if (!res.ok) return []
