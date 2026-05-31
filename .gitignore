@@ -61,3 +61,6 @@ bun.lockb
 NOTES.local.md
 TODO.local.md
 SCRATCH.md
+
+# Playwright MCP test artefacts
+.playwright-mcp/
