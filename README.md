@@ -2,61 +2,42 @@
 
 > Turn [opencode](https://opencode.ai) into a personal AI agent that remembers, reflects, and grows with you — minimally, without a new daemon.
 
-[![Status](https://img.shields.io/badge/status-design-orange)](./docs/design.md)
+[![Status](https://img.shields.io/badge/status-shipped-green)](./docs/design.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Plugin](https://img.shields.io/badge/opencode-plugin-blue)](https://opencode.ai/docs/plugins)
 
 ---
 
-## Status: All five phases shipped
-
-The plugin, three slash commands (`/wrap`, `/promote`, `/agents-edit`), idle reflection, pattern detection, and cross-session learnings are all implemented and on `main`. See [`docs/design.md`](./docs/design.md) for the spec.
-
-If you'd like to follow along, watch the repo or open a discussion.
-
----
-
 ## What this is
 
-A small opencode plugin (TypeScript, ~300 LOC) plus three slash skills that give your opencode sessions three new properties:
+A small opencode plugin (TypeScript, ~1800 LOC across 13 files) plus three slash skills that give your opencode sessions three new properties:
 
 | Property | What it means in practice |
 |---|---|
 | **Memory** | Each session wakes up already knowing what you've been working on, what you've decided, and recent activity. No more cold starts. |
-| **Reflection** | Every 3 minutes of idle, the plugin runs a background LLM call that silently saves new decisions and memories to your notes app (Joplin). Zero friction. |
-| **Growth** | The plugin watches your tool usage. When it sees a pattern repeat, it offers to turn it into a real skill. When it sees a cross-session correction, it proposes an `AGENTS.md` edit you can review. |
+| **Reflection** | After 3 minutes of idle, the plugin runs a background LLM call that silently saves new decisions and memories to Joplin. Zero friction. |
+| **Growth** | The plugin watches your tool usage. When it sees a pattern repeat ≥ 3 times, it offers to turn it into a skill. When it sees a cross-session correction ≥ 2 times, it proposes an `AGENTS.md` edit you can review. |
 
 Nothing autonomous — every change to skills or `AGENTS.md` requires your explicit approval. Notes are written silently by design.
 
 ---
 
-## Why this exists
+## How it works
 
-Existing personal-agent stacks are either heavyweight (Letta, MemGPT) or coding-only (Cursor, Aider, Continue). Hand-written `AGENTS.md` / `CLAUDE.md` files don't update themselves. Cursor rules don't either. Meanwhile, opencode already has rich plugin hooks (`session.created`, `session.idle`, `tool.execute.*`) and the open-source ecosystem already has notes apps (Joplin) and memory backends (Mem0, Letta, custom) that solve memory well in isolation.
+A single TypeScript plugin loads inside opencode. On startup it fetches all existing sessions and bootstraps each one with memory context from Joplin. On `session.created` it does the same for new sessions. On `session.idle` (3 minutes by default) it fires a non-blocking background reflection call to your LLM endpoint, parses the structured JSON response, and silently appends new decisions, memories, and agent-learnings to your Joplin notes. On `tool.execute.before` it tracks normalised tool-call signatures; when a pattern repeats 3 times it gets flagged for `/promote`. When a behaviour correction recurs across 2+ sessions, it gets flagged for `/agents-edit`.
 
-The gap is the **integration glue**: a small layer that lets opencode read from your notes app on session start, write reflections on idle, watch your tool patterns, and propose changes to its own instructions. That's all this project is.
+Joplin is accessed directly via its Web Clipper REST API (`GET /search`, `GET /notes/:id`, `POST /notes`, `PUT /notes/:id`). No Joplin MCP server required.
 
-If you already have a notes app you trust and a coding agent you like, this connects them.
-
----
-
-## How it works (one paragraph)
-
-A single TypeScript plugin loads inside opencode. On `session.created` it queries your Joplin notes (Decisions, Memories) and an optional memory backend (any HTTP service implementing the [adapter contract](./docs/adapters/)), then injects ~400 tokens of context as a system message. On `session.idle` (3 minutes), it fires a non-blocking background reflection call to an LLM, parses the JSON response, and silently appends new decisions, memories, and agent-learnings to your notes. On `tool.execute.before` it tracks normalized tool-call signatures; when a pattern repeats 3 times it gets flagged for `/promote` (skill creation). When a behavior correction recurs across 2+ sessions, it gets flagged for `/agents-edit` (AGENTS.md proposal). Three slash skills — `/wrap`, `/promote`, `/agents-edit` — handle the user-facing moments.
-
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the diagram, [`docs/design.md`](./docs/design.md) for the full spec.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the diagram and [`docs/design.md`](./docs/design.md) for the full spec.
 
 ---
 
 ## Requirements
 
-When implemented, you'll need:
-
-- **opencode** — the agent runtime ([install](https://opencode.ai))
-- **[Joplin](https://joplinapp.org/)** desktop with Web Clipper enabled — decisions and memories store
-- **Joplin MCP server** — there are several; any one with `search_notes`, `get_note`, `append_to_note`, `create_note` tools works
-- **An LLM endpoint** — any OpenAI-compatible chat completions endpoint (Anthropic, OpenAI, Gemini, Azure OpenAI, LM Studio, your-own-gateway). Configured via env var.
-- **Optional**: an ambient memory backend (Mem0 / Letta / a custom HTTP service / [2brn](https://github.com/SasidharanGS/2brn)) implementing the [adapter contract](./docs/adapters/). Without one, the plugin still works — it just won't have "what you were doing today" context, only Joplin notes.
+- **[opencode](https://opencode.ai)** — the agent runtime
+- **[Joplin](https://joplinapp.org/) desktop** with Web Clipper enabled — notes store, must be running for writes
+- **An LLM endpoint** — any OpenAI-compatible chat completions endpoint (Anthropic, OpenAI, Gemini, Azure OpenAI, LM Studio, your gateway). Used for background reflection.
+- **Optional**: an ambient memory backend (Mem0 / Letta / a custom HTTP service / [2brn](https://github.com/SasidharanGS/2brn)) implementing the [adapter contract](./docs/adapters/). Without one the plugin still works — it just won't have "what you were doing today" context.
 
 ---
 
@@ -72,85 +53,130 @@ When implemented, you'll need:
 }
 ```
 
-opencode clones the repo into its package cache and loads the bundled `dist/plugin.js` on next launch. On first load the plugin copies its bundled skills (`/wrap`, `/promote`, `/agents-edit`) and slash command files into `~/.config/opencode/skills/` and `~/.config/opencode/commands/` — only when they don't already exist, so user edits are never clobbered. Set `OPENCODE_PA_SKIP_AUTO_INSTALL=1` to disable that.
+opencode clones the repo into its package cache and loads the bundled `dist/plugin.js` on next launch. On first load the plugin copies its bundled skills and slash command files into `~/.config/opencode/` — only when they don't already exist, so your edits are never overwritten. Set `OPENCODE_PA_SKIP_AUTO_INSTALL=1` to disable.
 
-### 2. Configure
+### 2. Get your Joplin Web Clipper token
 
-Set these as environment variables, or put them in `opencode.jsonc` under `env`:
+In Joplin: **Tools → Options → Web Clipper** → enable the service → copy the token.
+
+### 3. Set environment variables
 
 ```bash
-# Required for background reflection and /wrap:
+# Required — LLM endpoint for background reflection:
 export OPENCODE_PA_LLM_URL="https://your-openai-compatible-endpoint/v1"
-export OPENCODE_PA_LLM_KEY="..."
+export OPENCODE_PA_LLM_KEY="your-api-key"
 export OPENCODE_PA_LLM_MODEL="claude-sonnet-4-6"
 
-# Required for silent Joplin writes:
-export JOPLIN_TOKEN="..."                          # from Joplin Web Clipper
-export OPENCODE_PA_JOPLIN_NOTEBOOK="Second Brain"  # or whatever you use
+# Required — Joplin writes:
+export JOPLIN_TOKEN="your-web-clipper-token"
+export JOPLIN_PORT="41184"                           # default, change if needed
+export OPENCODE_PA_JOPLIN_NOTEBOOK="Personal Agent"  # notebook all notes land in
 
-# Optional — ambient memory backend (2brn / Mem0 / Letta / custom):
+# Optional — ambient memory backend:
 export OPENCODE_PA_MEMORY_URL="http://127.0.0.1:7842"
 ```
 
-### 3. Restart opencode
+Put these in `~/.zshrc` or `~/.zshenv` (the latter is read by GUI apps).
 
-`/wrap`, `/promote`, and `/agents-edit` will be available. Idle reflection runs every ~3 minutes in the background.
+### 4. Restart opencode
+
+`/wrap`, `/promote`, and `/agents-edit` will be available. Idle reflection runs automatically.
 
 ### Updating
 
-opencode caches the git package at `~/.cache/opencode/packages/opencode-personal-agent*`. To pull the latest from `main`:
+opencode caches the git package at `~/.cache/opencode/packages/opencode-personal-agent*`. To pull the latest:
 
 ```bash
 rm -rf ~/.cache/opencode/packages/opencode-personal-agent*
 ```
 
-…and restart opencode. The plugin will re-clone, and any new skills/commands will be auto-installed on next load.
+Restart opencode. The plugin re-clones and new skills/commands auto-install on next load.
 
 ---
 
-## Roadmap
+## Slash commands
 
-Implementation lands in five phases. Each phase is independently useful.
+| Command | What it does |
+|---|---|
+| `/wrap` | Forces an immediate reflection (synchronous), then shows a summary of what was saved plus any pending skill candidates and AGENTS.md proposals. |
+| `/promote <name>` | Promotes a flagged tool-usage pattern into an installed skill. Asks global vs project scope, drafts SKILL.md, shows diff, writes on approval. |
+| `/agents-edit` | Reviews pending AGENTS.md proposals (cross-session evidence ≥ 2). Shows LLM-generated diff, apply / skip / edit. |
 
-| Phase | Deliverable | Status |
+---
+
+## Notes created by the plugin
+
+All notes land in the notebook configured by `OPENCODE_PA_JOPLIN_NOTEBOOK` (default: `"Personal Agent"`).
+
+| Note | Naming | Created when |
 |---|---|---|
-| 1 | Plugin scaffold + session.created memory bootstrap | **Shipped** |
-| 2 | Idle watcher + background reflection (silent Joplin writes) | **Shipped** |
-| 3 | `/wrap` slash skill (session summary) | **Shipped** |
-| 4 | Pattern detection + `/promote` slash skill | **Shipped** |
-| 5 | Cross-session learnings + `/agents-edit` slash skill | **Shipped** |
+| Decisions | `Decisions — YYYY-MM` | First decision written in that month |
+| Memories | `Memories — YYYY-MM` | First memory written in that month |
+| Agent Learnings | `Agent Learnings — YYYY-MM` | First learning written in that month |
+| Skills Proposed | `Skills Proposed` | First pattern flagged for `/promote` |
+| Project notes | `Project Notes — <projectTag>` | First reflection with a non-null `project_tag` for that project |
 
-Each phase has explicit acceptance criteria in [`docs/design.md` § 9](./docs/design.md#9-implementation-phases).
+Monthly notes roll over each month. Project notes are one per project tag (derived from the LLM's reflection output — typically the repo name).
 
 ---
 
-## Documentation
+## Configuration reference
 
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — One-page architecture summary with block diagram. Start here.
-- **[docs/design.md](./docs/design.md)** — Full design spec (~1100 lines). Component-level detail, algorithms, error handling, test plan.
-- **[docs/adapters/](./docs/adapters/)** — HTTP contract for memory backends. Reference adapters for 2brn, Mem0, Letta.
-- **[examples/](./examples/)** — Sample opencode config snippet, sample Joplin note formats for Decisions / Memories / Agent Learnings / Skills Proposed.
+All config is via environment variables. Defaults shown.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENCODE_PA_LLM_URL` | `http://127.0.0.1:8889/v1` | OpenAI-compatible chat completions base URL |
+| `OPENCODE_PA_LLM_KEY` | `1` | API key for the LLM endpoint |
+| `OPENCODE_PA_LLM_MODEL` | `CLAUDE_4_6_SONNET` | Model ID to use for reflections |
+| `JOPLIN_TOKEN` | _(empty)_ | Joplin Web Clipper token — required for writes |
+| `OPENCODE_PA_JOPLIN_TOKEN` | falls back to `JOPLIN_TOKEN` | Override token specifically for the plugin |
+| `JOPLIN_PORT` | `41184` | Joplin Web Clipper port |
+| `OPENCODE_PA_JOPLIN_NOTEBOOK` | `Second Brain` | Notebook all plugin notes are created in |
+| `OPENCODE_PA_MEMORY_URL` | _(none)_ | Optional memory backend base URL |
+| `OPENCODE_PA_IDLE_MS` | `180000` (3 min) | Idle threshold before reflection triggers |
+| `OPENCODE_PA_DEDUPE_MS` | `120000` (2 min) | Minimum gap between two reflections |
+| `OPENCODE_PA_PATTERN_THRESHOLD` | `3` | Tool-call repetitions before pattern is flagged |
+| `OPENCODE_PA_PROJECT_MAP` | `{}` | JSON map of `{"dir-name": "ProjectTag"}` overrides |
+| `OPENCODE_PA_SKIP_AUTO_INSTALL` | _(unset)_ | Set to `1` to skip auto-installing skills/commands |
+
+---
+
+## Files installed on first load
+
+The plugin copies these into `~/.config/opencode/` on first run (never overwrites):
+
+```
+~/.config/opencode/
+├── commands/
+│   ├── wrap.md
+│   ├── promote.md
+│   └── agents-edit.md
+└── skills/
+    ├── wrap/SKILL.md
+    ├── promote/SKILL.md
+    └── agents-edit/SKILL.md
+```
 
 ---
 
 ## Design principles
 
-These are intentionally non-negotiable:
-
 1. **No new daemon.** Everything runs as an opencode plugin in opencode's own event loop.
-2. **No new database.** Joplin SQLite (via the Joplin MCP server) is the durable store. Memory backends are optional and pluggable.
-3. **Low friction by default.** Silent saves for decisions and memories. Explicit approval gates only for skill installation and `AGENTS.md` edits.
-4. **Never silent-edit AGENTS.md.** Cross-session evidence threshold + diff review + user approval — every time.
-5. **Local-first.** Joplin is local. Memory backends are local. The only outbound HTTP call is to your chosen LLM endpoint, which is configurable.
-6. **Graceful degradation.** If Joplin is down, memory backend is down, or the LLM endpoint times out, the plugin logs a warning and keeps the session usable. Never blocks.
+2. **No new database.** Joplin (via its Web Clipper REST API) is the durable store.
+3. **Low friction by default.** Silent saves for decisions and memories. Explicit approval only for skill installation and `AGENTS.md` edits.
+4. **Never silent-edit `AGENTS.md`.** Cross-session evidence threshold + diff review + user approval every time.
+5. **Local-first.** Joplin is local. Memory backends are local. The only outbound call is to your configured LLM endpoint.
+6. **Graceful degradation.** If Joplin is down, the memory backend is down, or the LLM times out, the plugin logs a warning and keeps the session usable.
 
 ---
 
-## Contributing
+## Documentation
 
-This is currently a one-person project. Contributions welcome via PRs and issues.
-
-For now, the most useful contribution is feedback on the design spec — open a GitHub Discussion or Issue with comments/critique.
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — One-page architecture summary with block diagram.
+- **[docs/design.md](./docs/design.md)** — Full design spec. Component-level detail, algorithms, error handling, test plan.
+- **[docs/adapters/](./docs/adapters/)** — HTTP contract for optional memory backends. Reference adapters for 2brn, Mem0, Letta.
+- **[examples/](./examples/)** — Sample opencode config snippet and Joplin note format examples.
 
 ---
 

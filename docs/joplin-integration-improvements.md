@@ -1,7 +1,7 @@
 # Joplin Integration Improvements
 
-**Status**: In progress  
-**Branch**: `fix-joplin-search`  
+**Status**: Done  
+**Branch**: merged to `main`  
 **Last updated**: 2026-05-31
 
 ---
