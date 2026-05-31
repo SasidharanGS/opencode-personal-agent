@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test"
-import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage } from "../src/bootstrap"
+import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, prevMonth, mergeNoteBodies } from "../src/bootstrap"
 import type { BootstrapData } from "../src/types"
 
 describe("detectProject", () => {
@@ -105,5 +105,41 @@ describe("composeBootstrapMessage — agent learnings", () => {
     }
     const msg = composeBootstrapMessage(data)
     expect(msg).not.toContain("Agent Learnings")
+  })
+})
+
+describe("prevMonth", () => {
+  test("returns previous month date", () => {
+    const d = prevMonth(new Date("2026-05-15"))
+    expect(d.getMonth()).toBe(3) // April = 3
+    expect(d.getFullYear()).toBe(2026)
+  })
+
+  test("wraps year correctly", () => {
+    const d = prevMonth(new Date("2026-01-10"))
+    expect(d.getMonth()).toBe(11) // December = 11
+    expect(d.getFullYear()).toBe(2025)
+  })
+})
+
+describe("mergeNoteBodies", () => {
+  test("concatenates two note bodies with separator", () => {
+    const result = mergeNoteBodies("body A", "body B")
+    expect(result).toContain("body A")
+    expect(result).toContain("body B")
+  })
+
+  test("handles null current note", () => {
+    const result = mergeNoteBodies(null, "body B")
+    expect(result).toBe("body B")
+  })
+
+  test("handles null previous note", () => {
+    const result = mergeNoteBodies("body A", null)
+    expect(result).toBe("body A")
+  })
+
+  test("returns empty string when both null", () => {
+    expect(mergeNoteBodies(null, null)).toBe("")
   })
 })

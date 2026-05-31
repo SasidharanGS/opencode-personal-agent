@@ -72,6 +72,18 @@ function composeBootstrapMessage(data) {
   return lines.join(`
 `);
 }
+function prevMonth(date) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() - 1);
+  return d;
+}
+function mergeNoteBodies(current, previous) {
+  if (current && previous)
+    return `${current}
+
+${previous}`;
+  return current ?? previous ?? "";
+}
 
 // src/clients/joplin.ts
 class JoplinClient {
@@ -85,21 +97,23 @@ class JoplinClient {
     const p = new URLSearchParams({ token: this.token, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
     return `${this.baseUrl}${path}?${p}`;
   }
-  async getNote(titleOrId) {
+  async getNote(titleOrId, notebook = "Second Brain") {
     try {
-      const res = await fetch(this.url("/notes", { query: titleOrId, fields: "id,title,body,updated_time", limit: 10 }), { signal: AbortSignal.timeout(5000) });
-      if (!res.ok)
-        return null;
-      const data = await res.json();
-      const items = data?.items ?? (Array.isArray(data) ? data : []);
-      return items.find((n) => n.title === titleOrId) ?? null;
+      if (/^[a-f0-9]{32}$/.test(titleOrId)) {
+        const res = await fetch(this.url(`/notes/${titleOrId}`, { fields: "id,title,body,updated_time" }), { signal: AbortSignal.timeout(5000) });
+        if (!res.ok)
+          return null;
+        return await res.json();
+      }
+      const results = await this.searchNotes(`"${titleOrId}" notebook:"${notebook}"`, 5);
+      return results.find((n) => n.title === titleOrId) ?? null;
     } catch {
       return null;
     }
   }
   async searchNotes(query, limit = 5) {
     try {
-      const res = await fetch(this.url("/notes", { query, fields: "id,title,body,updated_time", limit, order_by: "updated_time", order_dir: "DESC" }), { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(this.url("/search", { query, fields: "id,title,body,updated_time", limit }), { signal: AbortSignal.timeout(5000) });
       if (!res.ok)
         return [];
       const data = await res.json();
@@ -108,7 +122,7 @@ class JoplinClient {
       return [];
     }
   }
-  async appendToNote(titleOrId, content, notebook) {
+  async appendToNote(titleOrId, content, notebook, projectTag) {
     try {
       const note = await this.getNote(titleOrId);
       if (note) {
@@ -120,9 +134,14 @@ class JoplinClient {
 ` + content }),
           signal: AbortSignal.timeout(1e4)
         });
+        if (res.ok && projectTag) {
+          const tagId = await this.ensureTag(projectTag);
+          if (tagId)
+            await this.applyTag(tagId, note.id);
+        }
         return res.ok;
       }
-      return await this.createNote(titleOrId, content, notebook);
+      return await this.createNote(titleOrId, content, notebook, projectTag);
     } catch {
       return false;
     }
@@ -140,7 +159,7 @@ class JoplinClient {
       return false;
     }
   }
-  async createNote(title, body, notebook) {
+  async createNote(title, body, notebook, projectTag) {
     try {
       const folderId = await this.getFolderId(notebook);
       const res = await fetch(this.url("/notes"), {
@@ -148,6 +167,51 @@ class JoplinClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, ...folderId ? { parent_id: folderId } : {} }),
         signal: AbortSignal.timeout(1e4)
+      });
+      if (!res.ok)
+        return false;
+      if (projectTag) {
+        const created = await res.json();
+        const tagId = await this.ensureTag(projectTag);
+        if (tagId && created?.id)
+          await this.applyTag(tagId, created.id);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async ensureTag(name) {
+    try {
+      const res = await fetch(this.url("/tags", { fields: "id,title", query: name }), { signal: AbortSignal.timeout(5000) });
+      if (!res.ok)
+        return null;
+      const data = await res.json();
+      const tags = data?.items ?? (Array.isArray(data) ? data : []);
+      const existing = tags.find((t) => t.title === name);
+      if (existing)
+        return existing.id;
+      const create = await fetch(this.url("/tags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: name }),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!create.ok)
+        return null;
+      const created = await create.json();
+      return created?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+  async applyTag(tagId, noteId) {
+    try {
+      const res = await fetch(this.url(`/tags/${tagId}/notes`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: noteId }),
+        signal: AbortSignal.timeout(5000)
       });
       return res.ok;
     } catch {
@@ -437,6 +501,20 @@ function renderLearning(l, now, crossSessionCount, sessionId) {
 
 ---`;
 }
+function renderProjectNoteEntry(type, title, summary, now, sessionId) {
+  const ts = now.toISOString().slice(0, 16).replace("T", " ");
+  return `## ${ts} — ${title}
+
+**Type**: ${type}
+**Summary**: ${summary}
+
+**Recorded by**: agent (session ${sessionId})
+
+---`;
+}
+function projectNoteName(projectTag) {
+  return `Project Notes — ${projectTag}`;
+}
 function agentLearningsNoteName(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -489,9 +567,17 @@ async function reflect(state, client, joplin) {
   const result = parseReflectionJson(raw);
   for (const d of result.decisions) {
     await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK);
+    if (d.project_tag) {
+      const entry = renderProjectNoteEntry("decision", d.title, d.decision, now, state.sessionId);
+      await joplin.appendToNote(projectNoteName(d.project_tag), entry, JOPLIN_NOTEBOOK, d.project_tag);
+    }
   }
   for (const m of result.memories) {
     await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK);
+    if (m.project_tag) {
+      const entry = renderProjectNoteEntry("memory", m.title, m.what_happened.slice(0, 120), now, state.sessionId);
+      await joplin.appendToNote(projectNoteName(m.project_tag), entry, JOPLIN_NOTEBOOK, m.project_tag);
+    }
   }
   const learningNoteName = agentLearningsNoteName(now);
   for (const l of result.agent_learnings) {
@@ -1205,6 +1291,16 @@ var PersonalAgent = async ({ client }) => {
               extra: { project: data.projectName }
             }
           });
+          if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+            await client.app.log({
+              body: {
+                service: "personal-agent",
+                level: "info",
+                message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+                extra: { project: data.projectName }
+              }
+            });
+          }
         }).catch(async (err) => {
           await client.app.log({
             body: { service: "personal-agent", level: "warn", message: "bootstrap failed", extra: { error: String(err) } }
@@ -1359,19 +1455,32 @@ async function runIdleChecks(s, joplin, client) {
 }
 async function gatherBootstrapData(joplin, memory, cwd) {
   const now = new Date;
+  const prev = prevMonth(now);
   const projectName = detectProject(cwd, PROJECT_MAP);
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
-  const [decisionsNote, memoriesNote, projectNotes, activities, agentLearnings] = await Promise.all([
+  const [
+    decisionsNote,
+    prevDecisionsNote,
+    memoriesNote,
+    prevMemoriesNote,
+    projectNotes,
+    activities,
+    agentLearnings
+  ] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
+    joplin.getNote(decisionsNoteName(prev)),
     joplin.getNote(memoriesNoteName(now)),
-    joplin.searchNotes(`+${projectName}`, 5),
+    joplin.getNote(memoriesNoteName(prev)),
+    joplin.searchNotes(`tag:${projectName}`, 5),
     memory.getTodayActivities(),
     readAgentLearnings(home)
   ]);
+  const decisionsBody = mergeNoteBodies(decisionsNote?.body ?? null, prevDecisionsNote?.body ?? null);
+  const memoriesBody = mergeNoteBodies(memoriesNote?.body ?? null, prevMemoriesNote?.body ?? null);
   return {
     projectName,
-    recentDecisions: decisionsNote ? JoplinClient.parseDecisionLines(decisionsNote.body, 7, now) : [],
-    recentMemories: memoriesNote ? JoplinClient.parseDecisionLines(memoriesNote.body, 7, now) : [],
+    recentDecisions: JoplinClient.parseDecisionLines(decisionsBody, 7, now),
+    recentMemories: JoplinClient.parseDecisionLines(memoriesBody, 7, now),
     projectNotes: projectNotes.slice(0, 5).map((n) => `${n.title} — ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
     agentLearnings

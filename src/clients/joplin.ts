@@ -1,4 +1,4 @@
-import type { JoplinNote, JoplinFolder } from "../types.js"
+import type { JoplinNote, JoplinFolder, JoplinTag } from "../types.js"
 
 export class JoplinClient {
   constructor(
@@ -13,16 +13,18 @@ export class JoplinClient {
     return `${this.baseUrl}${path}?${p}`
   }
 
-  async getNote(titleOrId: string): Promise<JoplinNote | null> {
+  async getNote(titleOrId: string, notebook = "Second Brain"): Promise<JoplinNote | null> {
     try {
-      const res = await fetch(
-        this.url("/notes", { query: titleOrId, fields: "id,title,body,updated_time", limit: 10 }),
-        { signal: AbortSignal.timeout(5_000) }
-      )
-      if (!res.ok) return null
-      const data = await res.json() as any
-      const items: JoplinNote[] = data?.items ?? (Array.isArray(data) ? data : [])
-      return items.find(n => n.title === titleOrId) ?? null
+      if (/^[a-f0-9]{32}$/.test(titleOrId)) {
+        const res = await fetch(
+          this.url(`/notes/${titleOrId}`, { fields: "id,title,body,updated_time" }),
+          { signal: AbortSignal.timeout(5_000) }
+        )
+        if (!res.ok) return null
+        return await res.json() as JoplinNote
+      }
+      const results = await this.searchNotes(`"${titleOrId}" notebook:"${notebook}"`, 5)
+      return results.find(n => n.title === titleOrId) ?? null
     } catch {
       return null
     }
@@ -31,7 +33,7 @@ export class JoplinClient {
   async searchNotes(query: string, limit = 5): Promise<JoplinNote[]> {
     try {
       const res = await fetch(
-        this.url("/notes", { query, fields: "id,title,body,updated_time", limit, order_by: "updated_time", order_dir: "DESC" }),
+        this.url("/search", { query, fields: "id,title,body,updated_time", limit }),
         { signal: AbortSignal.timeout(5_000) }
       )
       if (!res.ok) return []
@@ -47,7 +49,7 @@ export class JoplinClient {
    * Not atomic — concurrent calls can overwrite each other.
    * Acceptable in v1 (single-session use); revisit in Phase 2 if needed.
    */
-  async appendToNote(titleOrId: string, content: string, notebook: string): Promise<boolean> {
+  async appendToNote(titleOrId: string, content: string, notebook: string, projectTag?: string): Promise<boolean> {
     try {
       const note = await this.getNote(titleOrId)
       if (note) {
@@ -57,9 +59,13 @@ export class JoplinClient {
           body: JSON.stringify({ body: note.body + "\n\n" + content }),
           signal: AbortSignal.timeout(10_000),
         })
+        if (res.ok && projectTag) {
+          const tagId = await this.ensureTag(projectTag)
+          if (tagId) await this.applyTag(tagId, note.id)
+        }
         return res.ok
       }
-      return await this.createNote(titleOrId, content, notebook)
+      return await this.createNote(titleOrId, content, notebook, projectTag)
     } catch {
       return false
     }
@@ -79,7 +85,7 @@ export class JoplinClient {
     }
   }
 
-  async createNote(title: string, body: string, notebook: string): Promise<boolean> {
+  async createNote(title: string, body: string, notebook: string, projectTag?: string): Promise<boolean> {
     try {
       const folderId = await this.getFolderId(notebook)
       const res = await fetch(this.url("/notes"), {
@@ -87,6 +93,51 @@ export class JoplinClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, body, ...(folderId ? { parent_id: folderId } : {}) }),
         signal: AbortSignal.timeout(10_000),
+      })
+      if (!res.ok) return false
+      if (projectTag) {
+        const created = await res.json() as any
+        const tagId = await this.ensureTag(projectTag)
+        if (tagId && created?.id) await this.applyTag(tagId, created.id)
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async ensureTag(name: string): Promise<string | null> {
+    try {
+      const res = await fetch(
+        this.url("/tags", { fields: "id,title", query: name }),
+        { signal: AbortSignal.timeout(5_000) }
+      )
+      if (!res.ok) return null
+      const data = await res.json() as any
+      const tags: JoplinTag[] = data?.items ?? (Array.isArray(data) ? data : [])
+      const existing = tags.find(t => t.title === name)
+      if (existing) return existing.id
+      const create = await fetch(this.url("/tags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: name }),
+        signal: AbortSignal.timeout(5_000),
+      })
+      if (!create.ok) return null
+      const created = await create.json() as any
+      return created?.id ?? null
+    } catch {
+      return null
+    }
+  }
+
+  async applyTag(tagId: string, noteId: string): Promise<boolean> {
+    try {
+      const res = await fetch(this.url(`/tags/${tagId}/notes`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: noteId }),
+        signal: AbortSignal.timeout(5_000),
       })
       return res.ok
     } catch {

@@ -74,6 +74,21 @@ export function renderLearning(
   return `## ${ts} \u2014 ${l.observed.slice(0, 60)}\n\n**Type**: ${l.type}\n**Observed**: ${l.observed}\n**Evidence**: session ${sessionId} messages [${l.evidence_message_indices.join(", ")}]\n**Cross-session count**: ${crossSessionCount}\n**Proposed action**: ${l.proposed_action}\n**Status**: ${status}\n**Recorded by**: agent (session ${sessionId})\n\n---`
 }
 
+export function renderProjectNoteEntry(
+  type: "decision" | "memory",
+  title: string,
+  summary: string,
+  now: Date,
+  sessionId: string,
+): string {
+  const ts = now.toISOString().slice(0, 16).replace("T", " ")
+  return `## ${ts} \u2014 ${title}\n\n**Type**: ${type}\n**Summary**: ${summary}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
+}
+
+export function projectNoteName(projectTag: string): string {
+  return `Project Notes \u2014 ${projectTag}`
+}
+
 export function agentLearningsNoteName(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, "0")
@@ -143,10 +158,18 @@ export async function reflect(
 
   for (const d of result.decisions) {
     await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK)
+    if (d.project_tag) {
+      const entry = renderProjectNoteEntry("decision", d.title, d.decision, now, state.sessionId)
+      await joplin.appendToNote(projectNoteName(d.project_tag), entry, JOPLIN_NOTEBOOK, d.project_tag)
+    }
   }
 
   for (const m of result.memories) {
     await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK)
+    if (m.project_tag) {
+      const entry = renderProjectNoteEntry("memory", m.title, m.what_happened.slice(0, 120), now, state.sessionId)
+      await joplin.appendToNote(projectNoteName(m.project_tag), entry, JOPLIN_NOTEBOOK, m.project_tag)
+    }
   }
 
   const learningNoteName = agentLearningsNoteName(now)

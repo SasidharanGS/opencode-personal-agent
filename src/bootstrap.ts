@@ -74,3 +74,14 @@ export function composeBootstrapMessage(data: BootstrapData): string {
   lines.push("_End memory bootstrap. Continue normally._")
   return lines.join("\n")
 }
+
+export function prevMonth(date: Date): Date {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() - 1)
+  return d
+}
+
+export function mergeNoteBodies(current: string | null, previous: string | null): string {
+  if (current && previous) return `${current}\n\n${previous}`
+  return current ?? previous ?? ""
+}

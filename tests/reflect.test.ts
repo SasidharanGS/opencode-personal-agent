@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test"
-import { parseReflectionJson, renderDecision, renderMemory, renderLearning, agentLearningsNoteName } from "../src/reflect"
+import { parseReflectionJson, renderDecision, renderMemory, renderLearning, agentLearningsNoteName, renderProjectNoteEntry, projectNoteName } from "../src/reflect"
 import type { ReflectionDecision, ReflectionMemory, ReflectionLearning } from "../src/types"
 
 describe("parseReflectionJson", () => {
@@ -135,5 +135,31 @@ describe("renderLearning", () => {
 describe("agentLearningsNoteName", () => {
   test("returns monthly note name", () => {
     expect(agentLearningsNoteName(new Date("2026-05-28"))).toBe("Agent Learnings \u2014 2026-05")
+  })
+})
+
+describe("renderProjectNoteEntry", () => {
+  test("includes type and summary", () => {
+    const entry = renderProjectNoteEntry("decision", "My Title", "My summary", new Date("2026-05-31T14:32:00Z"), "ses123")
+    expect(entry).toContain("**Type**: decision")
+    expect(entry).toContain("**Summary**: My summary")
+    expect(entry).toContain("My Title")
+    expect(entry).toContain("ses123")
+  })
+
+  test("includes memory type", () => {
+    const entry = renderProjectNoteEntry("memory", "T", "S", new Date(), "s")
+    expect(entry).toContain("**Type**: memory")
+  })
+
+  test("ends with --- separator", () => {
+    const entry = renderProjectNoteEntry("decision", "T", "S", new Date(), "s")
+    expect(entry.trimEnd()).toEndWith("---")
+  })
+})
+
+describe("projectNoteName", () => {
+  test("returns correct note name", () => {
+    expect(projectNoteName("opencode-personal-agent")).toBe("Project Notes \u2014 opencode-personal-agent")
   })
 })
