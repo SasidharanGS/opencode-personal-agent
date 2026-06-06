@@ -8,29 +8,29 @@
  *   • Plugin loads and registers /wrap, /promote, /agents-edit
  *   • All existing sessions get bootstrapped on startup
  *
- * Phase 2 — Live (watches the desktop app's log file):
- *   • Waits for the next session.idle event in the desktop app
- *   • Verifies reflect() fires and writes to Joplin
- *   • Cleans up the test Joplin entries afterward
+ * Phase 2 — Live (polls Joplin for new entries written by the desktop app):
+ *   • Waits for idle → reflect → Joplin write from the desktop app
+ *   • Verifies real entries appear in Decisions/Memories/Agent Learnings
  *
  * Phase 2 requires an active opencode session in the desktop app.
- * Have a conversation, then stop typing — the 3-minute idle timer will fire.
- * Use OPENCODE_PA_IDLE_MS=20000 in ~/.zshrc for faster testing.
+ * Have a conversation, then stop typing — the idle timer fires, reflect
+ * runs, and new entries appear in Joplin. With OPENCODE_PA_IDLE_MS=20000
+ * in ~/.zshrc the timer fires after 20s of inactivity.
  *
  * Usage:
  *   bun run test:e2e                  # run both phases
  *   bun run test:e2e --phase1         # automated checks only
- *   bun run test:e2e --phase2         # live watch only
+ *   bun run test:e2e --phase2         # live Joplin watch only
  *
  * Requirements:
  *   - Joplin desktop running with Web Clipper enabled
  *   - JOPLIN_TOKEN or OPENCODE_PA_JOPLIN_TOKEN set
  *   - OPENCODE_PA_LLM_URL / OPENCODE_PA_LLM_KEY / OPENCODE_PA_LLM_MODEL set
  *   - opencode binary on PATH (Phase 1)
- *   - OpenCode desktop app running with a conversation open (Phase 2)
+ *   - OpenCode desktop app running with a recent conversation (Phase 2)
  */
 
-import { spawn, spawnSync } from "node:child_process"
+import { spawn, spawnSync, execSync } from "node:child_process"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -40,12 +40,10 @@ const PORT      = 4199
 const PASSWORD  = "e2e-test"
 const BASE      = `http://127.0.0.1:${PORT}`
 const AUTH      = Buffer.from(`opencode:${PASSWORD}`).toString("base64")
-const DIR       = process.cwd()
 const JOPLIN    = `http://127.0.0.1:${process.env.JOPLIN_PORT ?? "41184"}`
 const J_TOKEN   = process.env.OPENCODE_PA_JOPLIN_TOKEN ?? process.env.JOPLIN_TOKEN ?? ""
 const NOTEBOOK  = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK ?? "Personal Agent"
 const IDLE_MS   = Number(process.env.OPENCODE_PA_IDLE_MS ?? 180_000)
-const LOG_DIR   = path.join(os.homedir(), ".local", "share", "opencode", "log")
 
 const ONLY_PHASE1 = process.argv.includes("--phase1")
 const ONLY_PHASE2 = process.argv.includes("--phase2")
@@ -135,11 +133,10 @@ async function preflight(): Promise<boolean> {
   return ok
 }
 
-// ── Phase 1: automated checks via dedicated serve instance ────────────────────
+// ── Phase 1: automated checks ─────────────────────────────────────────────────
 async function phase1() {
   console.log(B("\n━━ Phase 1: Automated checks ━━━━━━━━━━━━━━━━━━━━━━━━\n"))
 
-  // Start server
   const logFile = path.join(os.tmpdir(), `oc-e2e-${Date.now()}.log`)
   console.log(D(`  log: ${logFile}`))
   const logFd = await fs.open(logFile, "w")
@@ -160,7 +157,6 @@ async function phase1() {
     pass("opencode serve started", `port ${PORT}`)
     await sleep(3_000)
 
-    // Check 1: commands registered
     const { data: commands } = await api("GET", "/command")
     const cmdNames = Array.isArray(commands) ? commands.map((c: any) => c.name) : []
     const pluginCmds = ["wrap", "promote", "agents-edit"].filter(c => cmdNames.includes(c))
@@ -168,16 +164,14 @@ async function phase1() {
       ? pass("Plugin commands registered", pluginCmds.join(", "))
       : fail("Plugin commands registered", `found: ${pluginCmds.join(", ") || "none"}`)
 
-    // Check 2: bootstrap ran for existing sessions
     const log = await fs.readFile(logFile, "utf8").catch(() => "")
     log.includes("bootstrapped session") && log.includes("personal-agent")
       ? pass("Plugin bootstrapped existing sessions on startup")
       : fail("Plugin bootstrapped existing sessions on startup", "no bootstrap log lines")
 
-    // Check 3: no project notes hint fires (expected for fresh state)
     log.includes("no project notes found")
-      ? pass("Plugin logged 'no project notes' hint correctly")
-      : pass("Plugin running cleanly", "no unexpected errors")
+      ? pass("Plugin 'no project notes' hint logged correctly")
+      : pass("Plugin running cleanly")
 
   } finally {
     proc.kill()
@@ -185,52 +179,19 @@ async function phase1() {
   }
 }
 
-// ── Phase 2: live watch of the desktop app ────────────────────────────────────
+// ── Phase 2: live Joplin polling ──────────────────────────────────────────────
 async function phase2() {
   console.log(B("\n━━ Phase 2: Live desktop app verification ━━━━━━━━━━━━\n"))
 
-  // Find the latest desktop app log file
-  let logFiles: string[] = []
+  // Verify desktop app is running
   try {
-    const entries = await fs.readdir(LOG_DIR)
-    logFiles = entries
-      .filter(f => f.endsWith(".log"))
-      .map(f => path.join(LOG_DIR, f))
-      .sort()
-      .reverse()
+    const out = execSync("lsof -i -n -P 2>/dev/null | grep LISTEN | grep OpenCode", { encoding: "utf8" })
+    const m = out.match(/TCP 127\.0\.0\.1:(\d+) \(LISTEN\)/)
+    m ? pass("OpenCode desktop app running", `port ${m[1]}`)
+      : fail("OpenCode desktop app running", "not detected")
   } catch {
-    fail("Desktop app log found", `cannot read ${LOG_DIR}`)
-    return
+    fail("OpenCode desktop app running", "lsof check failed")
   }
-
-  // Helper: get the current active log (most recently modified)
-  async function getActiveLog(): Promise<string> {
-    const entries = await fs.readdir(LOG_DIR)
-    const logs = await Promise.all(
-      entries.filter(f => f.endsWith(".log")).map(async f => {
-        const full = path.join(LOG_DIR, f)
-        const stat = await fs.stat(full).catch(() => null)
-        return { path: full, mtime: stat?.mtimeMs ?? 0 }
-      })
-    )
-    return logs.sort((a, b) => b.mtime - a.mtime)[0]?.path ?? logFiles[0]
-  }
-
-  // Find the log with plugin lines (for the "plugin is active" check)
-  let logFile = logFiles[0]
-  for (const f of logFiles.slice(0, 5)) {
-    const content = await fs.readFile(f, "utf8").catch(() => "")
-    if (content.includes("personal-agent")) { logFile = f; break }
-  }
-  console.log(D(`  plugin last seen in: ${path.basename(logFile)}`))
-
-  // Verify the plugin is loaded in this log
-  const initialLog = await fs.readFile(logFile, "utf8").catch(() => "")
-  if (!initialLog.includes("personal-agent")) {
-    fail("Plugin active in desktop app", "no personal-agent lines in latest log — restart OpenCode")
-    return
-  }
-  pass("Plugin active in desktop app log")
 
   // Snapshot Joplin before
   const now   = new Date()
@@ -239,134 +200,80 @@ async function phase2() {
   const memTitle = `Memories \u2014 ${month}`
   const alTitle  = `Agent Learnings \u2014 ${month}`
 
-  const decNoteB = await getJoplinNote(decTitle)
-  const memNoteB = await getJoplinNote(memTitle)
-  const alNoteB  = await getJoplinNote(alTitle)
-  const decBefore = (decNoteB?.body ?? "").match(/^## /gm)?.length ?? 0
-  const memBefore = (memNoteB?.body ?? "").match(/^## /gm)?.length ?? 0
-  const alBefore  = (alNoteB?.body  ?? "").match(/^## /gm)?.length ?? 0
+  const [decB, memB, alB] = await Promise.all([
+    getJoplinNote(decTitle),
+    getJoplinNote(memTitle),
+    getJoplinNote(alTitle),
+  ])
+  const count = (body: string) => (body.match(/^## /gm) ?? []).length
+  const decBefore = count(decB?.body ?? "")
+  const memBefore = count(memB?.body ?? "")
+  const alBefore  = count(alB?.body  ?? "")
 
   console.log(D(`  Joplin state before — decisions:${decBefore} memories:${memBefore} learnings:${alBefore}`))
 
-  // Compute idle wait time with buffer
-  const idleThreshold = IDLE_MS
-  const maxWait = idleThreshold + 90_000  // threshold + 90s for LLM + Joplin write
-  const idleMin = Math.round(idleThreshold / 1000)
-  const maxMin  = Math.round(maxWait / 1000)
+  const maxWait = IDLE_MS + 120_000  // idle threshold + 2 min for LLM + Joplin write
+  const idleSec = Math.round(IDLE_MS / 1000)
+  const maxSec  = Math.round(maxWait / 1000)
 
-  console.log(Y(`\n  ⏳ Waiting up to ${maxMin}s for idle → reflect → Joplin write`))
-  console.log(Y(`     (idle threshold = ${idleMin}s — stop typing in opencode to trigger)`))
-  console.log()
+  console.log(Y(`\n  ⏳ Polling Joplin every 5s for up to ${maxSec}s`))
+  console.log(Y(`     Idle threshold: ${idleSec}s (OPENCODE_PA_IDLE_MS)`))
+  console.log(Y(`     Stop typing in opencode to trigger idle reflection.\n`))
 
   const startTime = Date.now()
-  let idleFired  = false
-  let reflectRan = false
-  let sessionId  = ""
-
-  // Snapshot all log file sizes at test start — only read content added after this point
-  const logSnapshots = new Map<string, number>()
-  for (const f of logFiles.slice(0, 5)) {
-    const stat = await fs.stat(f).catch(() => null)
-    logSnapshots.set(f, stat?.size ?? 0)
-  }
-
-  async function getNewLogContent(): Promise<string> {
-    const parts: string[] = []
-    // Always include the most recently modified log
-    const activeLog = await getActiveLog()
-    if (!logSnapshots.has(activeLog)) logSnapshots.set(activeLog, 0)
-    for (const [f, baseline] of logSnapshots) {
-      const content = await fs.readFile(f, "utf8").catch(() => "")
-      if (content.length > baseline) parts.push(content.slice(baseline))
-    }
-    return parts.join("")
-  }
+  let written = false
+  let newDec = 0, newMem = 0, newAl = 0
 
   while (Date.now() - startTime < maxWait) {
     await sleep(5_000)
     const elapsed = Math.round((Date.now() - startTime) / 1000)
-    const newLog = await getNewLogContent()
 
-    if (!idleFired && newLog.includes("session.idle")) {
-      idleFired = true
-      console.log(G("  ✓") + ` session.idle fired  (+${elapsed}s)`)
-    }
+    const [decN, memN, alN] = await Promise.all([
+      getJoplinNote(decTitle),
+      getJoplinNote(memTitle),
+      getJoplinNote(alTitle),
+    ])
+    newDec = count(decN?.body ?? "") - decBefore
+    newMem = count(memN?.body ?? "") - memBefore
+    newAl  = count(alN?.body  ?? "") - alBefore
 
-    if (!reflectRan && newLog.includes("reflect: wrote")) {
-      const match = newLog.match(/service=personal-agent sessionId=(\S+) reflect: wrote (\d+)d (\d+)m (\d+)l/)
-      if (match) {
-        reflectRan = true
-        sessionId  = match[1]
-        const [, , d, m, l] = match
-        console.log(G("  ✓") + ` reflect() ran  (+${elapsed}s) — wrote ${d}d ${m}m ${l}l`)
+    if (newDec > 0 || newMem > 0 || newAl > 0) {
+      written = true
+      process.stdout.write("\r\x1b[K")
+      console.log(G("  ✓") + ` Joplin updated!  (+${elapsed}s)  decisions:+${newDec}  memories:+${newMem}  learnings:+${newAl}`)
 
-        // Wait up to 15s for Joplin to flush
-        let joplinUpdated = false
-        for (let j = 0; j < 5; j++) {
-          await sleep(3_000)
-          const decNote = await getJoplinNote(decTitle)
-          const memNote = await getJoplinNote(memTitle)
-          const alNote  = await getJoplinNote(alTitle)
-          const decNow = (decNote?.body ?? "").match(/^## /gm)?.length ?? 0
-          const memNow = (memNote?.body ?? "").match(/^## /gm)?.length ?? 0
-          const alNow  = (alNote?.body  ?? "").match(/^## /gm)?.length ?? 0
-          if (decNow > decBefore || memNow > memBefore || alNow > alBefore) {
-            joplinUpdated = true
-
-            // Show new entries
-            for (const [title, before, note] of [
-              [decTitle, decBefore, decNote],
-              [memTitle, memBefore, memNote],
-              [alTitle,  alBefore,  alNote ],
-            ] as [string, number, any][]) {
-              const body = note?.body ?? ""
-              const sections = body.split("---").map((s: string) => s.trim()).filter((s: string) => s.startsWith("##"))
-              const newSections = sections.slice(before)
-              if (newSections.length) {
-                console.log(`\n  ${B("📓 " + title)}`)
-                for (const s of newSections)
-                  console.log(`     ${s.slice(0, 300).replace(/\n/g, "\n     ")}`)
-              }
-            }
-            break
-          }
+      // Show the new entries
+      for (const [title, before, note] of [
+        [decTitle, decBefore, decN],
+        [memTitle, memBefore, memN],
+        [alTitle,  alBefore,  alN],
+      ] as [string, number, any][]) {
+        const body = note?.body ?? ""
+        const sections = body.split("---").map((s: string) => s.trim()).filter((s: string) => s.startsWith("##"))
+        const newSections = sections.slice(before)
+        if (newSections.length) {
+          console.log(`\n  ${B("📓 " + title)}`)
+          for (const s of newSections)
+            console.log(`     ${s.slice(0, 300).replace(/\n/g, "\n     ")}`)
         }
-
-        joplinUpdated
-          ? pass("Joplin notes written", `decisions:${(await getJoplinNote(decTitle))?.body?.match(/^## /gm)?.length ?? 0} memories:${(await getJoplinNote(memTitle))?.body?.match(/^## /gm)?.length ?? 0}`)
-          : pass("reflect() ran", "wrote 0 new entries this turn (LLM found nothing notable — try having a more substantive conversation)")
-
-        break
       }
+      break
     }
 
-    if (!reflectRan) {
-      const phase = !idleFired ? "waiting for idle" : "idle fired, timer counting..."
-      process.stdout.write(`\r  ${D(`+${elapsed}s  ${phase} (idle in ~${Math.max(0, idleMin - elapsed)}s)`)}\x1b[K`)
-    }
+    const remaining = Math.max(0, idleSec - elapsed)
+    process.stdout.write(
+      `\r  ${D(`+${elapsed}s  d:+${newDec} m:+${newMem} al:+${newAl}  ${remaining > 0 ? `stop typing — idle in ~${remaining}s` : "waiting for reflect..."}`)}\x1b[K`
+    )
   }
 
-  if (!idleFired)  fail("session.idle fired",      `not seen in ${maxMin}s — is OpenCode open with an active session?`)
-  if (!reflectRan) fail("reflect() triggered",     "idle fired but reflect never ran — check logs")
+  console.log()
 
-  // Cleanup: remove entries written by this test's session from Joplin
-  if (sessionId) {
-    console.log(D("\n\n  Cleaning up test Joplin entries..."))
-    let cleaned = 0
-    for (const title of [decTitle, memTitle, alTitle]) {
-      const note = await getJoplinNote(title)
-      if (!note || !note.body.includes(sessionId)) continue
-      const sections = note.body.split("\n---\n")
-      const keep = sections.filter((s: string) => !s.includes(sessionId))
-      if (keep.length < sections.length) {
-        await joplin("PUT", `/notes/${note.id}`, { body: keep.join("\n---\n").trim() })
-        cleaned += sections.length - keep.length
-      }
-    }
-    cleaned > 0
-      ? pass(`Cleaned up ${cleaned} test Joplin entries`)
-      : pass("Cleanup complete")
-  }
+  written
+    ? pass("reflect() wrote to Joplin end-to-end", `d:+${newDec} m:+${newMem} al:+${newAl}`)
+    : fail("reflect() wrote to Joplin",
+        `No new entries after ${maxSec}s. ` +
+        `Ensure you had a conversation, stopped typing for ${idleSec}s, ` +
+        `and OPENCODE_PA_IDLE_MS=${IDLE_MS} is set in ~/.zshrc with OpenCode restarted.`)
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
