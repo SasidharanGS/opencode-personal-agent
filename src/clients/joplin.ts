@@ -13,7 +13,10 @@ export class JoplinClient {
     return `${this.baseUrl}${path}?${p}`
   }
 
-  async getNote(titleOrId: string, notebook = "Second Brain"): Promise<JoplinNote | null> {
+  async getNote(
+    titleOrId: string,
+    notebook: string = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK ?? "Second Brain",
+  ): Promise<JoplinNote | null> {
     try {
       if (/^[a-f0-9]{32}$/.test(titleOrId)) {
         const res = await fetch(
@@ -25,17 +28,29 @@ export class JoplinClient {
       }
       // Strip non-alphanumeric chars so FTS5 tokenizes correctly (em-dashes etc. break phrases)
       const tokens = titleOrId.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
-      const results = await this.searchNotes(`${tokens} notebook:"${notebook}"`, 10)
-      return results.find(n => n.title === titleOrId) ?? null
+      const results = await this.searchNotes(
+        `${tokens} notebook:"${notebook}"`,
+        20,
+        "id,title,body,updated_time,created_time",
+      )
+      const matches = results.filter(n => n.title === titleOrId)
+      if (matches.length === 0) return null
+      // Oldest-wins: if duplicates ever sneak in, always converge to the original note.
+      matches.sort((a, b) => (a.created_time ?? 0) - (b.created_time ?? 0))
+      return matches[0]
     } catch {
       return null
     }
   }
 
-  async searchNotes(query: string, limit = 5): Promise<JoplinNote[]> {
+  async searchNotes(
+    query: string,
+    limit = 5,
+    fields = "id,title,body,updated_time",
+  ): Promise<JoplinNote[]> {
     try {
       const res = await fetch(
-        this.url("/search", { query, fields: "id,title,body,updated_time", limit }),
+        this.url("/search", { query, fields, limit }),
         { signal: AbortSignal.timeout(5_000) }
       )
       if (!res.ok) return []
@@ -53,7 +68,7 @@ export class JoplinClient {
    */
   async appendToNote(titleOrId: string, content: string, notebook: string, projectTag?: string): Promise<boolean> {
     try {
-      const note = await this.getNote(titleOrId)
+      const note = await this.getNote(titleOrId, notebook)
       if (note) {
         const res = await fetch(this.url(`/notes/${note.id}`), {
           method: "PUT",

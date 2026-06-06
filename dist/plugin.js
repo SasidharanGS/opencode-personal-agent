@@ -97,7 +97,7 @@ class JoplinClient {
     const p = new URLSearchParams({ token: this.token, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
     return `${this.baseUrl}${path}?${p}`;
   }
-  async getNote(titleOrId, notebook = "Second Brain") {
+  async getNote(titleOrId, notebook = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK ?? "Second Brain") {
     try {
       if (/^[a-f0-9]{32}$/.test(titleOrId)) {
         const res = await fetch(this.url(`/notes/${titleOrId}`, { fields: "id,title,body,updated_time" }), { signal: AbortSignal.timeout(5000) });
@@ -106,15 +106,19 @@ class JoplinClient {
         return await res.json();
       }
       const tokens = titleOrId.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
-      const results = await this.searchNotes(`${tokens} notebook:"${notebook}"`, 10);
-      return results.find((n) => n.title === titleOrId) ?? null;
+      const results = await this.searchNotes(`${tokens} notebook:"${notebook}"`, 20, "id,title,body,updated_time,created_time");
+      const matches = results.filter((n) => n.title === titleOrId);
+      if (matches.length === 0)
+        return null;
+      matches.sort((a, b) => (a.created_time ?? 0) - (b.created_time ?? 0));
+      return matches[0];
     } catch {
       return null;
     }
   }
-  async searchNotes(query, limit = 5) {
+  async searchNotes(query, limit = 5, fields = "id,title,body,updated_time") {
     try {
-      const res = await fetch(this.url("/search", { query, fields: "id,title,body,updated_time", limit }), { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(this.url("/search", { query, fields, limit }), { signal: AbortSignal.timeout(5000) });
       if (!res.ok)
         return [];
       const data = await res.json();
@@ -125,7 +129,7 @@ class JoplinClient {
   }
   async appendToNote(titleOrId, content, notebook, projectTag) {
     try {
-      const note = await this.getNote(titleOrId);
+      const note = await this.getNote(titleOrId, notebook);
       if (note) {
         const res = await fetch(this.url(`/notes/${note.id}`), {
           method: "PUT",

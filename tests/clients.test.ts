@@ -100,6 +100,127 @@ describe("JoplinClient error handling", () => {
     const client = new JoplinClient("http://127.0.0.1:1", "bad-token")
     expect(await client.searchNotes("+myrepo", 5)).toHaveLength(0)
   })
+
+  test("getNote returns OLDEST note when duplicates exist (created_time tiebreak)", async () => {
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        items: [
+          { id: "newest",   title: "Memories \u2014 2026-06", body: "B", updated_time: 30, created_time: 30 },
+          { id: "oldest",   title: "Memories \u2014 2026-06", body: "A", updated_time: 10, created_time: 10 },
+          { id: "middle",   title: "Memories \u2014 2026-06", body: "M", updated_time: 20, created_time: 20 },
+          { id: "unrelated", title: "Other Note",            body: "X", updated_time: 5,  created_time: 5  },
+        ],
+      }),
+    } as any)
+    const client = new JoplinClient("http://example.com", "tok")
+    const result = await client.getNote("Memories \u2014 2026-06", "Personal Agent")
+    globalThis.fetch = origFetch
+    expect(result?.id).toBe("oldest")
+  })
+
+  test("getNote uses OPENCODE_PA_JOPLIN_NOTEBOOK env var by default", async () => {
+    const prev = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK
+    process.env.OPENCODE_PA_JOPLIN_NOTEBOOK = "Personal Agent"
+    let capturedUrl = ""
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any) => {
+      capturedUrl = String(url)
+      return { ok: true, json: async () => ({ items: [] }) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    await client.getNote("Memories \u2014 2026-06") // <-- no notebook arg
+    globalThis.fetch = origFetch
+    if (prev === undefined) delete process.env.OPENCODE_PA_JOPLIN_NOTEBOOK
+    else process.env.OPENCODE_PA_JOPLIN_NOTEBOOK = prev
+    const decoded = decodeURIComponent(capturedUrl).replace(/\+/g, " ")
+    expect(decoded).toContain('notebook:"Personal Agent"')
+  })
+
+  test("getNote explicit notebook overrides env default", async () => {
+    const prev = process.env.OPENCODE_PA_JOPLIN_NOTEBOOK
+    process.env.OPENCODE_PA_JOPLIN_NOTEBOOK = "Personal Agent"
+    let capturedUrl = ""
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any) => {
+      capturedUrl = String(url)
+      return { ok: true, json: async () => ({ items: [] }) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    await client.getNote("Decisions \u2014 2026-05", "Second Brain")
+    globalThis.fetch = origFetch
+    if (prev === undefined) delete process.env.OPENCODE_PA_JOPLIN_NOTEBOOK
+    else process.env.OPENCODE_PA_JOPLIN_NOTEBOOK = prev
+    const decoded = decodeURIComponent(capturedUrl).replace(/\+/g, " ")
+    expect(decoded).toContain('notebook:"Second Brain"')
+    expect(decoded).not.toContain('notebook:"Personal Agent"')
+  })
+
+  test("appendToNote searches in the SAME notebook it was called with (regression for duplicate-notes bug)", async () => {
+    const searchUrls: string[] = []
+    const putCalls: { url: string; body: string }[] = []
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any, opts?: any) => {
+      const u = String(url)
+      if (u.includes("/search")) {
+        searchUrls.push(u)
+        return {
+          ok: true,
+          json: async () => ({
+            items: [{ id: "found123", title: "Memories \u2014 2026-06", body: "prior", updated_time: 1, created_time: 1 }],
+          }),
+        } as any
+      }
+      if (opts?.method === "PUT") {
+        putCalls.push({ url: u, body: String(opts.body) })
+        return { ok: true } as any
+      }
+      return { ok: true, json: async () => ({}) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    const result = await client.appendToNote(
+      "Memories \u2014 2026-06",
+      "new entry",
+      "Personal Agent",
+    )
+    globalThis.fetch = origFetch
+    expect(result).toBe(true)
+    // search must scope to the notebook appendToNote was given
+    expect(decodeURIComponent(searchUrls[0]).replace(/\+/g, " "))
+      .toContain('notebook:"Personal Agent"')
+    // PUT against the found note, not POST /notes (no new note created)
+    expect(putCalls.length).toBe(1)
+    expect(putCalls[0].url).toContain("/notes/found123")
+    expect(putCalls[0].body).toContain("prior")
+    expect(putCalls[0].body).toContain("new entry")
+  })
+
+  test("appendToNote falls through to createNote only when note truly missing", async () => {
+    let postedNote: any = null
+    let folderQueried = false
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async (url: any, opts?: any) => {
+      const u = String(url)
+      if (u.includes("/search")) return { ok: true, json: async () => ({ items: [] }) } as any
+      if (u.includes("/folders") && (!opts || opts.method !== "POST")) {
+        folderQueried = true
+        return { ok: true, json: async () => ({ items: [{ id: "folder1", title: "Personal Agent" }] }) } as any
+      }
+      if (u.includes("/notes") && opts?.method === "POST") {
+        postedNote = JSON.parse(String(opts.body))
+        return { ok: true, json: async () => ({ id: "new1" }) } as any
+      }
+      return { ok: true, json: async () => ({}) } as any
+    }
+    const client = new JoplinClient("http://example.com", "tok")
+    const ok = await client.appendToNote("Brand New Title", "body", "Personal Agent")
+    globalThis.fetch = origFetch
+    expect(ok).toBe(true)
+    expect(folderQueried).toBe(true)
+    expect(postedNote?.title).toBe("Brand New Title")
+    expect(postedNote?.parent_id).toBe("folder1")
+  })
 })
 
 import { MemoryClient } from "../src/clients/memory"

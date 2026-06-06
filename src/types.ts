@@ -38,6 +38,7 @@ export interface JoplinNote {
   title: string
   body: string
   updated_time: number
+  created_time?: number
 }
 
 export interface JoplinFolder {
