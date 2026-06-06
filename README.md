@@ -32,6 +32,68 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the diagram and [`docs/design.md`
 
 ---
 
+## Memory bootstrap
+
+On each session start the plugin injects a compact memory block into the system prompt. Example output:
+
+```
+proj: opencode-personal-agent
+today: VSCode 2h, Terminal 1h, Joplin 30m
+
+### Active repo (last 7d, ranked by sig)
+- 06-06 14:32 [d sig:9] Inject stub tools at schema-proxy — Reconstruct tools at proxy
+- 06-06 13:18 [m sig:8] Joplin dedup script merged 85 notes — Cleaned Personal Agent notebook
+
+### Other recent work (last 3d, top 7 by sig ≥6)
+- 06-06 11:00 [2brn] Timezone bug fixed at daemon level
+- 06-06 10:50 [jll-schema-proxy] toolConfig root-caused
+
+### Agent Learnings
+<contents of agent-learnings.md>
+
+_End memory bootstrap. Continue normally._
+```
+
+Constants in `src/bootstrap.ts`: `BOOTSTRAP_ACTIVE_CAP=12`, `BOOTSTRAP_OTHER_CAP=7`, `BOOTSTRAP_OTHER_SIG_THRESHOLD=6`.
+
+---
+
+## Schema (v2 compact)
+
+All Joplin notes written since 2026-06-06 use v2 compact format. The parser (`JoplinClient.parseEntries`) reads both v1 and v2 formats for backward compatibility.
+
+**Memory entry:**
+
+```
+## 2026-06-06 14:32 — Dedup script merged 85 notes
+proj: opencode-personal-agent · sig: 8
+why: Duplicate-notes bug created 11 title groups
+did: Cleaned Personal Agent notebook
+files: scripts/dedup-notes.ts
+loose: monitor for re-emergence
+```
+
+**Decision entry:**
+
+```
+## 2026-06-06 14:32 — Inject stub tools at proxy
+proj: jll-schema-proxy · sig: 9
+why: Bedrock rejects /compact
+chose: Reconstruct tools; tool_choice:none
+vs: strip blocks — loses context; fix Falcon — not owned
+```
+
+**Learning entry:**
+
+```
+## 2026-06-06 14:32 — User prefers Joplin /search not /notes
+type: preference_expressed · sig: 8 · seen: 3
+observed: User prefers Joplin /search not /notes
+action: AGENTS.md edit (proposed_agents_edit)
+```
+
+---
+
 ## Requirements
 
 - **[opencode](https://opencode.ai)** — the agent runtime
@@ -114,9 +176,10 @@ All notes land in the notebook configured by `OPENCODE_PA_JOPLIN_NOTEBOOK` (defa
 | Memories | `Memories — YYYY-MM` | First memory written in that month |
 | Agent Learnings | `Agent Learnings — YYYY-MM` | First learning written in that month |
 | Skills Proposed | `Skills Proposed` | First pattern flagged for `/promote` |
-| Project notes | `Project Notes — <projectTag>` | First reflection with a non-null `project_tag` for that project |
 
-Monthly notes roll over each month. Project notes are one per project tag (derived from the LLM's reflection output — typically the repo name).
+Monthly notes roll over each month.
+
+> **Note:** The `Project Notes — <projectTag>` mirror entity was removed in v2. Migration applied 2026-06-06. Existing Project Notes in Joplin are no longer written to or read from.
 
 ---
 

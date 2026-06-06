@@ -36,16 +36,18 @@ One-page summary. For the full spec see [`docs/design.md`](./docs/design.md).
    └───────────────────┘  └──────────┬───────────┘  └──────────────────────┘
                                      │
                                      ▼
-                          ┌────────────────────────────────────┐
-                          │ Your Joplin SQLite                 │
-                          │                                    │
-                          │ Notes the plugin reads & writes:   │
-                          │ • Decisions — YYYY-MM              │
-                          │ • Memories — YYYY-MM               │
-                          │ • Agent Learnings — YYYY-MM        │
-                          │ • Skills Proposed (rolling)        │
-                          │ • Project Notes — <projectTag>     │
-                          └────────────────────────────────────┘
+                          ┌──────────────────────────────────────────┐
+                          │ Your Joplin SQLite                       │
+                          │                                          │
+                          │ Notes the plugin reads & writes:         │
+                          │ • Decisions — YYYY-MM                    │
+                          │ • Memories — YYYY-MM                     │
+                          │ • Agent Learnings — YYYY-MM              │
+                          │ • Skills Proposed (rolling)              │
+                          │                                          │
+                          │ Removed in v2 (migration 2026-06-06):    │
+                          │   Project Notes — <projectTag>           │
+                          └──────────────────────────────────────────┘
 ```
 
 ## Why a plugin, not a separate process
@@ -81,12 +83,18 @@ Time 3:04.1 Plugin appends to "Decisions — 2026-05" via Joplin REST. Silent.
             User never noticed.
 ```
 
+## Two-tier bootstrap projection (v2)
+
+`gatherBootstrapData` parses the current + previous month's Memories and Decisions notes via `JoplinClient.parseEntries` (dual-format: reads both v1 and v2). Entries are split into two tiers: *active* (project matches current repo, last 7d, top 12 by significance) and *other* (different project, last 3d, sig ≥ 6, top 7). `composeBootstrapMessage` renders these as `### Active repo` and `### Other recent work` sections. Target: ≤1.6 KB total injection.
+
+Renderers `renderDecision`, `renderMemory`, and `renderLearning` now emit compact v2 format (multi-line key:value blocks with `proj`, `sig`, `why`, `chose`/`did`, `vs`/`files`, `loose` fields). The older v1 prose format is still parsed for backward compatibility but no longer written.
+
 ## What stays in scope
 
 - TypeScript plugin (13 source files)
 - Three slash skills (`/wrap`, `/promote`, `/agents-edit`)
 - A documented HTTP contract for pluggable memory backends
-- Five Joplin note types
+- Four Joplin note types (Project Notes removed in v2)
 
 ## What's explicitly out of scope (v1)
 
