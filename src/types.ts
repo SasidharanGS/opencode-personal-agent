@@ -58,7 +58,7 @@ export interface BootstrapEntry {
   projectTag: string   // "general" when null
   sig: number          // 1-10, clamped
   title: string
-  summary: string      // first sentence of why/did/chose, ~60 chars max
+  summary: string      // first sentence of why/did/chose, ~100 chars max
 }
 
 export interface BootstrapData {

@@ -1,4 +1,4 @@
-import { expect, test, describe } from "bun:test"
+import { expect, test, it, describe } from "bun:test"
 import { JoplinClient } from "../src/clients/joplin"
 
 describe("JoplinClient.parseDecisionLines", () => {
@@ -308,5 +308,116 @@ describe("JoplinClient tag methods", () => {
     globalThis.fetch = origFetch
     expect(result).toBe(true)
     expect(capturedUrl).toContain("/tags/tag123/notes")
+  })
+})
+
+describe("parseEntries — v1 (legacy) format", () => {
+  const v1Body = `## 2026-06-06 14:32 \u2014 Fix /compact
+
+**Project**: jll-schema-proxy  +jll-schema-proxy
+**Context**: Bedrock rejected /compact payloads
+**Decision**: Inject stub tools at proxy
+**Rationale**: Preserves history; Falcon not owned
+**Rejected**:
+  - strip blocks — loses context
+
+**Recorded by**: agent (session ses_x)
+
+---
+
+## 2026-06-01 09:10 \u2014 Old entry
+
+**Project**: general
+**What happened**: Something happened
+**Significance**: Notable
+**Files touched**:
+  - (none)
+**Loose ends**:
+  - (none)
+
+**Recorded by**: agent (session ses_y)
+
+---`
+
+  it("extracts entries from v1 body with default sig=5", () => {
+    const entries = JoplinClient.parseEntries(v1Body, { withinDays: 30, now: new Date("2026-06-07") })
+    expect(entries).toHaveLength(2)
+    expect(entries[0].date).toBe("2026-06-06")
+    expect(entries[0].time).toBe("14:32")
+    expect(entries[0].title).toBe("Fix /compact")
+    expect(entries[0].projectTag).toBe("jll-schema-proxy")
+    expect(entries[0].sig).toBe(5)
+    expect(entries[0].kind).toBe("d") // has Decision field
+  })
+
+  it("filters by withinDays", () => {
+    const entries = JoplinClient.parseEntries(v1Body, { withinDays: 3, now: new Date("2026-06-07") })
+    expect(entries).toHaveLength(1)
+    expect(entries[0].date).toBe("2026-06-06")
+  })
+
+  it("returns empty array on empty body", () => {
+    const entries = JoplinClient.parseEntries("", { withinDays: 7, now: new Date() })
+    expect(entries).toEqual([])
+  })
+})
+
+describe("parseEntries — v2 (compact) format", () => {
+  const v2Body = `## 2026-06-06 14:32 \u2014 Inject stub tools at schema-proxy
+proj: jll-schema-proxy \u00b7 sig: 9
+why: Bedrock rejects /compact when tools missing but tool blocks present
+chose: Reconstruct tools at proxy; tool_choice:none; preserves message history
+vs: strip blocks (loses context); fix Falcon Java (not owned)
+
+## 2026-06-06 13:18 \u2014 Joplin dedup script merged 85 notes
+proj: opencode-personal-agent \u00b7 sig: 8
+why: Duplicate-notes bug created 11 title groups in Personal Agent
+did: Wrote dedup script; oldest-wins; PUT merged bodies; DELETE survivors
+files: scripts/dedup-notes.ts
+`
+
+  it("extracts entries with explicit sig from v2 body", () => {
+    const entries = JoplinClient.parseEntries(v2Body, { withinDays: 30, now: new Date("2026-06-07") })
+    expect(entries).toHaveLength(2)
+    expect(entries[0].sig).toBe(9)
+    expect(entries[0].kind).toBe("d") // has `chose:` field
+    expect(entries[0].projectTag).toBe("jll-schema-proxy")
+    expect(entries[0].summary).toContain("Reconstruct tools")
+    expect(entries[1].sig).toBe(8)
+    expect(entries[1].kind).toBe("m") // has `did:` field, no `chose:`
+  })
+
+  it("clamps out-of-range sig", () => {
+    const body = `## 2026-06-06 10:00 \u2014 t1\nproj: x \u00b7 sig: 99\nwhy: y\ndid: z\n`
+    const entries = JoplinClient.parseEntries(body, { withinDays: 30, now: new Date("2026-06-07") })
+    expect(entries[0].sig).toBe(10)
+  })
+
+  it("handles mixed v1 and v2 sections in one body", () => {
+    const mixed = `## 2026-06-06 14:00 \u2014 v2 decision
+proj: x \u00b7 sig: 7
+why: testing mixed body
+chose: keep both formats parseable
+
+## 2026-06-05 10:00 \u2014 v1 memory
+
+**Project**: y
+**What happened**: legacy entry
+**Significance**: still readable
+**Files touched**:
+  - (none)
+**Loose ends**:
+  - (none)
+
+**Recorded by**: agent (session ses_x)
+
+---`
+    const entries = JoplinClient.parseEntries(mixed, { withinDays: 30, now: new Date("2026-06-07") })
+    expect(entries).toHaveLength(2)
+    expect(entries[0].sig).toBe(7)
+    expect(entries[0].kind).toBe("d")
+    expect(entries[1].sig).toBe(5)
+    expect(entries[1].kind).toBe("m")
+    expect(entries[1].projectTag).toBe("y")
   })
 })

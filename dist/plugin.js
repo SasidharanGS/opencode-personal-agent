@@ -252,6 +252,60 @@ class JoplinClient {
     }
     return results;
   }
+  static parseEntries(body, opts) {
+    if (!body)
+      return [];
+    const cutoff = new Date(opts.now.getTime() - opts.withinDays * 24 * 60 * 60 * 1000);
+    const out = [];
+    const HEADER_RE = /(?=^##\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+\u2014)/m;
+    const sections = body.split(HEADER_RE).map((s) => s.trim()).filter(Boolean);
+    for (const section of sections) {
+      const headerMatch = section.match(/^##\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+\u2014\s+(.+)$/m);
+      if (!headerMatch)
+        continue;
+      const [, date, time, title] = headerMatch;
+      const entryDate = new Date(date);
+      if (isNaN(entryDate.getTime()) || entryDate < cutoff)
+        continue;
+      const v2Meta = section.match(/^proj:\s+(\S+)\s+\u00b7\s+sig:\s+(\d+)/m);
+      let projectTag = "general";
+      let sig = 5;
+      let isV2 = false;
+      if (v2Meta) {
+        isV2 = true;
+        projectTag = v2Meta[1];
+        sig = Math.max(1, Math.min(10, parseInt(v2Meta[2], 10) || 5));
+      } else {
+        const v1Proj = section.match(/^\*\*Project\*\*:\s+([^\s+]+)/m);
+        if (v1Proj)
+          projectTag = v1Proj[1];
+      }
+      const kind = /^(chose:|\*\*Decision\*\*:)/m.test(section) ? "d" : "m";
+      let summary = title.trim();
+      if (isV2) {
+        const choseMatch = section.match(/^chose:\s+(.+)$/m);
+        const didMatch = section.match(/^did:\s+(.+)$/m);
+        const whyMatch = section.match(/^why:\s+(.+)$/m);
+        const sumMatch = kind === "d" ? choseMatch ?? whyMatch : didMatch ?? whyMatch;
+        if (sumMatch)
+          summary = sumMatch[1].trim().slice(0, 100);
+      } else {
+        const sumMatch = section.match(/^\*\*(?:Decision|What happened)\*\*:\s+(.+)$/m);
+        if (sumMatch)
+          summary = sumMatch[1].trim().slice(0, 100);
+      }
+      out.push({
+        date,
+        time,
+        kind,
+        projectTag: projectTag.trim(),
+        sig,
+        title: title.trim(),
+        summary
+      });
+    }
+    return out;
+  }
 }
 
 // src/clients/memory.ts

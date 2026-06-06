@@ -1,4 +1,7 @@
-import type { JoplinNote, JoplinFolder, JoplinTag } from "../types.js"
+import type { JoplinNote, JoplinFolder, JoplinTag, BootstrapEntry } from "../types.js"
+
+const EM_DASH = "\u2014"
+const MIDDLE_DOT = "\u00b7"
 
 export class JoplinClient {
   constructor(
@@ -174,6 +177,12 @@ export class JoplinClient {
     }
   }
 
+  /**
+   * @deprecated Use `parseEntries` instead. Removed in Task 5 of the
+   * compact-schema-v2 migration. This method only returns "DATE — TITLE"
+   * strings; `parseEntries` returns structured `BootstrapEntry[]` with
+   * per-entry significance and project tag.
+   */
   static parseDecisionLines(body: string, withinDays: number, now: Date): string[] {
     const cutoff = new Date(now.getTime() - withinDays * 24 * 60 * 60 * 1000)
     const sections = body.split(/^---$/m).map(s => s.trim()).filter(Boolean)
@@ -187,5 +196,75 @@ export class JoplinClient {
       results.push(`${m[1]} \u2014 ${m[2].trim()}`)
     }
     return results
+  }
+
+  static parseEntries(
+    body: string,
+    opts: { withinDays: number; now: Date },
+  ): BootstrapEntry[] {
+    if (!body) return []
+    const cutoff = new Date(opts.now.getTime() - opts.withinDays * 24 * 60 * 60 * 1000)
+    const out: BootstrapEntry[] = []
+
+    // Split on `## YYYY-MM-DD HH:MM — title` headers. Use a positive lookahead so
+    // the header line stays at the start of each chunk.
+    const HEADER_RE = /(?=^##\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+\u2014)/m
+    const sections = body.split(HEADER_RE).map(s => s.trim()).filter(Boolean)
+
+    for (const section of sections) {
+      const headerMatch = section.match(/^##\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+\u2014\s+(.+)$/m)
+      if (!headerMatch) continue
+      const [, date, time, title] = headerMatch
+      const entryDate = new Date(date)
+      if (isNaN(entryDate.getTime()) || entryDate < cutoff) continue
+
+      // Try v2 first: `proj: <tag> · sig: <n>`
+      const v2Meta = section.match(/^proj:\s+(\S+)\s+\u00b7\s+sig:\s+(\d+)/m)
+      let projectTag = "general"
+      let sig = 5
+      let isV2 = false
+
+      if (v2Meta) {
+        isV2 = true
+        projectTag = v2Meta[1]
+        sig = Math.max(1, Math.min(10, parseInt(v2Meta[2], 10) || 5))
+      } else {
+        // v1: `**Project**: <tag>` (drop the trailing `+tag` if present)
+        const v1Proj = section.match(/^\*\*Project\*\*:\s+([^\s+]+)/m)
+        if (v1Proj) projectTag = v1Proj[1]
+      }
+
+      // Kind: decision if `chose:` (v2) or `**Decision**:` (v1) present
+      const kind: "m" | "d" =
+        /^(chose:|\*\*Decision\*\*:)/m.test(section) ? "d" : "m"
+
+      // Summary: first content line after metadata
+      let summary = title.trim()
+      if (isV2) {
+        // For decisions, prefer `chose:` summary; for memories prefer `did:` then `why:`
+        const choseMatch = section.match(/^chose:\s+(.+)$/m)
+        const didMatch = section.match(/^did:\s+(.+)$/m)
+        const whyMatch = section.match(/^why:\s+(.+)$/m)
+        const sumMatch = kind === "d"
+          ? (choseMatch ?? whyMatch)
+          : (didMatch ?? whyMatch)
+        if (sumMatch) summary = sumMatch[1].trim().slice(0, 100)
+      } else {
+        const sumMatch = section.match(/^\*\*(?:Decision|What happened)\*\*:\s+(.+)$/m)
+        if (sumMatch) summary = sumMatch[1].trim().slice(0, 100)
+      }
+
+      out.push({
+        date,
+        time,
+        kind,
+        projectTag: projectTag.trim(),
+        sig,
+        title: title.trim(),
+        summary,
+      })
+    }
+
+    return out
   }
 }
