@@ -132,16 +132,21 @@ class JoplinClient {
       return [];
     }
   }
-  async appendToNote(titleOrId, content, notebook, projectTag) {
+  async appendManyToNote(titleOrId, blocks, notebook, projectTag) {
+    if (blocks.length === 0)
+      return true;
     try {
       const note = await this.getNote(titleOrId, notebook);
+      const addition = blocks.join(`
+
+`);
       if (note) {
         const res = await fetch(this.url(`/notes/${note.id}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body: note.body + `
 
-` + content }),
+` + addition }),
           signal: AbortSignal.timeout(1e4)
         });
         if (res.ok && projectTag) {
@@ -151,10 +156,13 @@ class JoplinClient {
         }
         return res.ok;
       }
-      return await this.createNote(titleOrId, content, notebook, projectTag);
+      return await this.createNote(titleOrId, addition, notebook, projectTag);
     } catch {
       return false;
     }
+  }
+  async appendToNote(titleOrId, content, notebook, projectTag) {
+    return this.appendManyToNote(titleOrId, [content], notebook, projectTag);
   }
   async updateNote(id, body) {
     try {
@@ -597,16 +605,22 @@ async function reflect(state, client, joplin) {
     return;
   }
   const result = parseReflectionJson(raw);
-  for (const d of result.decisions) {
-    await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK);
+  const decisionBlocks = result.decisions.map((d) => renderDecision(d, now, state.sessionId));
+  if (decisionBlocks.length > 0) {
+    await joplin.appendManyToNote(decisionsNoteName(now), decisionBlocks, JOPLIN_NOTEBOOK);
   }
-  for (const m of result.memories) {
-    await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK);
+  const memoryBlocks = result.memories.map((m) => renderMemory(m, now, state.sessionId));
+  if (memoryBlocks.length > 0) {
+    await joplin.appendManyToNote(memoriesNoteName(now), memoryBlocks, JOPLIN_NOTEBOOK);
   }
   const learningNoteName = agentLearningsNoteName(now);
+  const learningBlocks = [];
   for (const l of result.agent_learnings) {
     const crossCount = await countCrossSessionLearnings(joplin, l.observed);
-    await joplin.appendToNote(learningNoteName, renderLearning(l, now, crossCount, state.sessionId), JOPLIN_NOTEBOOK);
+    learningBlocks.push(renderLearning(l, now, crossCount, state.sessionId));
+  }
+  if (learningBlocks.length > 0) {
+    await joplin.appendManyToNote(learningNoteName, learningBlocks, JOPLIN_NOTEBOOK);
   }
   await client.app.log({
     body: {

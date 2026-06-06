@@ -65,18 +65,20 @@ export class JoplinClient {
   }
 
   /**
-   * Reads the note, appends content, and writes back via PUT.
-   * Not atomic — concurrent calls can overwrite each other.
-   * Acceptable in v1 (single-session use); revisit in Phase 2 if needed.
+   * Appends multiple content blocks to a note in a single GET+PUT round trip.
+   * Batching all entries for the same note into one call eliminates the
+   * duplicate-note race that occurs when multiple sessions append concurrently.
    */
-  async appendToNote(titleOrId: string, content: string, notebook: string, projectTag?: string): Promise<boolean> {
+  async appendManyToNote(titleOrId: string, blocks: string[], notebook: string, projectTag?: string): Promise<boolean> {
+    if (blocks.length === 0) return true
     try {
       const note = await this.getNote(titleOrId, notebook)
+      const addition = blocks.join("\n\n")
       if (note) {
         const res = await fetch(this.url(`/notes/${note.id}`), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: note.body + "\n\n" + content }),
+          body: JSON.stringify({ body: note.body + "\n\n" + addition }),
           signal: AbortSignal.timeout(10_000),
         })
         if (res.ok && projectTag) {
@@ -85,10 +87,14 @@ export class JoplinClient {
         }
         return res.ok
       }
-      return await this.createNote(titleOrId, content, notebook, projectTag)
+      return await this.createNote(titleOrId, addition, notebook, projectTag)
     } catch {
       return false
     }
+  }
+
+  async appendToNote(titleOrId: string, content: string, notebook: string, projectTag?: string): Promise<boolean> {
+    return this.appendManyToNote(titleOrId, [content], notebook, projectTag)
   }
 
   async updateNote(id: string, body: string): Promise<boolean> {

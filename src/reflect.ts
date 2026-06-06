@@ -178,19 +178,24 @@ export async function reflect(
 
   const result = parseReflectionJson(raw)
 
-  for (const d of result.decisions) {
-    await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK)
+  const decisionBlocks = result.decisions.map(d => renderDecision(d, now, state.sessionId))
+  if (decisionBlocks.length > 0) {
+    await joplin.appendManyToNote(decisionsNoteName(now), decisionBlocks, JOPLIN_NOTEBOOK)
   }
 
-  for (const m of result.memories) {
-    await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK)
+  const memoryBlocks = result.memories.map(m => renderMemory(m, now, state.sessionId))
+  if (memoryBlocks.length > 0) {
+    await joplin.appendManyToNote(memoriesNoteName(now), memoryBlocks, JOPLIN_NOTEBOOK)
   }
 
   const learningNoteName = agentLearningsNoteName(now)
+  const learningBlocks: string[] = []
   for (const l of result.agent_learnings) {
-    // Count prior sessions where this same observation was recorded (best-effort via Joplin search)
     const crossCount = await countCrossSessionLearnings(joplin, l.observed)
-    await joplin.appendToNote(learningNoteName, renderLearning(l, now, crossCount, state.sessionId), JOPLIN_NOTEBOOK)
+    learningBlocks.push(renderLearning(l, now, crossCount, state.sessionId))
+  }
+  if (learningBlocks.length > 0) {
+    await joplin.appendManyToNote(learningNoteName, learningBlocks, JOPLIN_NOTEBOOK)
   }
 
   await client.app.log({
