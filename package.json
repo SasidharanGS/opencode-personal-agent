@@ -21,6 +21,7 @@
   },
   "scripts": {
     "test": "bun test",
+    "test:e2e": "bun run scripts/e2e.ts",
     "build": "bun build src/plugin.ts --outdir dist --format esm --target node",
     "install-extras": "bash scripts/install-extras.sh"
   },
