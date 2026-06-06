@@ -63,16 +63,10 @@ export interface BootstrapEntry {
 
 export interface BootstrapData {
   projectName: string
-  // v2 fields (set by gatherBootstrapData in Task 5):
   recentActive: BootstrapEntry[]
   recentOther: BootstrapEntry[]
   activitySummary: string | null
   agentLearnings: string | null
-  // v1 fields — DEPRECATED; retained for one task to keep tests green.
-  // Removed in Task 5.
-  recentDecisions?: string[]
-  recentMemories?: string[]
-  projectNotes?: string[]
 }
 
 export interface MemoryActivity {

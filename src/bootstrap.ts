@@ -1,6 +1,10 @@
 import * as fs from "node:fs/promises"
 import * as nodePath from "node:path"
-import type { BootstrapData } from "./types.js"
+import type { BootstrapData, BootstrapEntry } from "./types.js"
+
+export const BOOTSTRAP_ACTIVE_CAP = 12
+export const BOOTSTRAP_OTHER_CAP = 7
+export const BOOTSTRAP_OTHER_SIG_THRESHOLD = 6
 
 export function detectProject(cwd: string, projectMap: Record<string, string>): string {
   const parts = cwd.replace(/\/$/, "").split("/").filter(Boolean)
@@ -44,28 +48,36 @@ export async function readAgentLearnings(home: string): Promise<string | null> {
   }
 }
 
+function renderActiveLine(e: BootstrapEntry): string {
+  const md = e.date.slice(5)
+  return `- ${md} ${e.time} [${e.kind} sig:${e.sig}] ${e.title} \u2014 ${e.summary}`
+}
+
+function renderOtherLine(e: BootstrapEntry): string {
+  const md = e.date.slice(5)
+  return `- ${md} ${e.time} [${e.projectTag}] ${e.title}`
+}
+
 export function composeBootstrapMessage(data: BootstrapData): string {
   const lines: string[] = ["## Memory bootstrap", ""]
-  lines.push(`**Active project (from cwd)**: ${data.projectName}`)
+  lines.push(`proj: ${data.projectName}`)
   if (data.activitySummary) {
-    lines.push(`**Today's activity**: ${data.activitySummary}`)
+    lines.push(`today: ${data.activitySummary}`)
   }
   lines.push("")
-  if (data.recentDecisions.length > 0) {
-    lines.push("### Recent decisions (last 7 days)")
-    for (const d of data.recentDecisions) lines.push(`- ${d}`)
+
+  if (data.recentActive.length > 0) {
+    lines.push("### Active repo (last 7d, ranked by sig)")
+    for (const e of data.recentActive) lines.push(renderActiveLine(e))
     lines.push("")
   }
-  if (data.recentMemories.length > 0) {
-    lines.push("### Recent memories (last 7 days)")
-    for (const m of data.recentMemories) lines.push(`- ${m}`)
+
+  if (data.recentOther.length > 0) {
+    lines.push(`### Other recent work (last 3d, top ${BOOTSTRAP_OTHER_CAP} by sig \u2265${BOOTSTRAP_OTHER_SIG_THRESHOLD})`)
+    for (const e of data.recentOther) lines.push(renderOtherLine(e))
     lines.push("")
   }
-  if (data.projectNotes.length > 0) {
-    lines.push("### Project-tagged notes (last 7 days)")
-    for (const n of data.projectNotes) lines.push(`- ${n}`)
-    lines.push("")
-  }
+
   if (data.agentLearnings) {
     lines.push("### Agent Learnings")
     lines.push(data.agentLearnings)

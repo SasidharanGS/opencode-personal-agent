@@ -177,27 +177,6 @@ export class JoplinClient {
     }
   }
 
-  /**
-   * @deprecated Use `parseEntries` instead. Removed in Task 5 of the
-   * compact-schema-v2 migration. This method only returns "DATE — TITLE"
-   * strings; `parseEntries` returns structured `BootstrapEntry[]` with
-   * per-entry significance and project tag.
-   */
-  static parseDecisionLines(body: string, withinDays: number, now: Date): string[] {
-    const cutoff = new Date(now.getTime() - withinDays * 24 * 60 * 60 * 1000)
-    const sections = body.split(/^---$/m).map(s => s.trim()).filter(Boolean)
-    const results: string[] = []
-    for (const section of sections) {
-      if (results.length >= 10) break
-      const m = section.match(/^##\s+(\d{4}-\d{2}-\d{2})\s+[\d:]+\s+\u2014\s+(.+)$/m)
-      if (!m) continue
-      const entryDate = new Date(m[1])
-      if (isNaN(entryDate.getTime()) || entryDate < cutoff) continue
-      results.push(`${m[1]} \u2014 ${m[2].trim()}`)
-    }
-    return results
-  }
-
   static parseEntries(
     body: string,
     opts: { withinDays: number; now: Date },

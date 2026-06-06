@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, readAgentLearnings, prevMonth, mergeNoteBodies } from "./bootstrap.js"
+import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, readAgentLearnings, prevMonth, mergeNoteBodies, BOOTSTRAP_ACTIVE_CAP, BOOTSTRAP_OTHER_CAP, BOOTSTRAP_OTHER_SIG_THRESHOLD } from "./bootstrap.js"
 import { JoplinClient } from "./clients/joplin.js"
 import { MemoryClient } from "./clients/memory.js"
 import { normalizeArgs } from "./normalizer.js"
@@ -79,16 +79,16 @@ export const PersonalAgent: Plugin = async ({ client }) => {
         body: {
           service: "personal-agent",
           level: "info",
-          message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
+          message: `bootstrapped session ${sessionId} with ${data.recentActive.length} active + ${data.recentOther.length} other entries`,
           extra: { project: data.projectName },
         },
       })
-      if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+      if (data.recentActive.length === 0 && data.projectName !== "unknown") {
         await client.app.log({
           body: {
             service: "personal-agent",
             level: "info",
-            message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+            message: `no recent active entries found for "${data.projectName}" — reflect() will create them automatically after your first session`,
             extra: { project: data.projectName },
           },
         })
@@ -314,23 +314,39 @@ async function gatherBootstrapData(
   const [
     decisionsNote, prevDecisionsNote,
     memoriesNote, prevMemoriesNote,
-    projectNotes, activities, agentLearnings,
+    activities, agentLearnings,
   ] = await Promise.all([
     joplin.getNote(decisionsNoteName(now)),
     joplin.getNote(decisionsNoteName(prev)),
     joplin.getNote(memoriesNoteName(now)),
     joplin.getNote(memoriesNoteName(prev)),
-    joplin.searchNotes(`tag:${projectName}`, 5),
     memory.getTodayActivities(),
     readAgentLearnings(home),
   ])
   const decisionsBody = mergeNoteBodies(decisionsNote?.body ?? null, prevDecisionsNote?.body ?? null)
   const memoriesBody  = mergeNoteBodies(memoriesNote?.body ?? null,  prevMemoriesNote?.body ?? null)
+
+  const decisionsEntries = JoplinClient.parseEntries(decisionsBody, { withinDays: 7, now })
+  const memoriesEntries  = JoplinClient.parseEntries(memoriesBody,  { withinDays: 7, now })
+  const all = [...decisionsEntries, ...memoriesEntries]
+
+  const active = all
+    .filter(e => e.projectTag === projectName)
+    .sort((a, b) => b.sig - a.sig || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .slice(0, BOOTSTRAP_ACTIVE_CAP)
+
+  const threeDayCutoff = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
+  const other = all
+    .filter(e => e.projectTag !== projectName
+              && new Date(e.date) >= threeDayCutoff
+              && e.sig >= BOOTSTRAP_OTHER_SIG_THRESHOLD)
+    .sort((a, b) => b.sig - a.sig || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .slice(0, BOOTSTRAP_OTHER_CAP)
+
   return {
     projectName,
-    recentDecisions: JoplinClient.parseDecisionLines(decisionsBody, 7, now),
-    recentMemories:  JoplinClient.parseDecisionLines(memoriesBody,  7, now),
-    projectNotes: projectNotes.slice(0, 5).map(n => `${n.title} \u2014 ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
+    recentActive: active,
+    recentOther: other,
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
     agentLearnings,
   }

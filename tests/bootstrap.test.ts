@@ -1,6 +1,6 @@
 import { expect, test, describe } from "bun:test"
-import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, prevMonth, mergeNoteBodies } from "../src/bootstrap"
-import type { BootstrapData } from "../src/types"
+import { detectProject, decisionsNoteName, memoriesNoteName, composeBootstrapMessage, prevMonth, mergeNoteBodies, BOOTSTRAP_ACTIVE_CAP, BOOTSTRAP_OTHER_CAP, BOOTSTRAP_OTHER_SIG_THRESHOLD } from "../src/bootstrap"
+import type { BootstrapData, BootstrapEntry } from "../src/types"
 
 describe("detectProject", () => {
   test("returns last path segment when no map entry matches", () => {
@@ -39,9 +39,11 @@ describe("memoriesNoteName", () => {
 describe("composeBootstrapMessage", () => {
   const baseData: BootstrapData = {
     projectName: "myrepo",
-    recentDecisions: ["2026-05-20 \u2014 Use SQLite \u2014 simpler than Postgres"],
-    recentMemories: ["2026-05-21 \u2014 Merged PR \u2014 public release done"],
-    projectNotes: ["Design spec \u2014 full spec for v1 plugin"],
+    recentActive: [
+      mkEntry({ title: "Use SQLite", summary: "simpler than Postgres", kind: "d", projectTag: "myrepo", sig: 8 }),
+      mkEntry({ title: "Merged PR", summary: "public release done", kind: "m", projectTag: "myrepo", sig: 7 }),
+    ],
+    recentOther: [],
     activitySummary: "VS Code, Terminal, Joplin",
     agentLearnings: null,
   }
@@ -66,8 +68,8 @@ describe("composeBootstrapMessage", () => {
     expect(composeBootstrapMessage({ ...baseData, activitySummary: null })).not.toContain("activity")
   })
 
-  test("omits decisions section when empty", () => {
-    expect(composeBootstrapMessage({ ...baseData, recentDecisions: [] })).not.toContain("decisions")
+  test("omits active section when recentActive is empty", () => {
+    expect(composeBootstrapMessage({ ...baseData, recentActive: [] })).not.toContain("Active repo")
   })
 
   test("includes end marker", () => {
@@ -83,9 +85,8 @@ describe("composeBootstrapMessage — agent learnings", () => {
   test("includes agent learnings section when present", () => {
     const data: BootstrapData = {
       projectName: "myproject",
-      recentDecisions: [],
-      recentMemories: [],
-      projectNotes: [],
+      recentActive: [],
+      recentOther: [],
       activitySummary: null,
       agentLearnings: "## Behavioral Rules\n\n### Use kebab-case\n- **Rule**: always kebab-case",
     }
@@ -97,9 +98,8 @@ describe("composeBootstrapMessage — agent learnings", () => {
   test("omits agent learnings section when null", () => {
     const data: BootstrapData = {
       projectName: "myproject",
-      recentDecisions: [],
-      recentMemories: [],
-      projectNotes: [],
+      recentActive: [],
+      recentOther: [],
       activitySummary: null,
       agentLearnings: null,
     }
@@ -141,5 +141,50 @@ describe("mergeNoteBodies", () => {
 
   test("returns empty string when both null", () => {
     expect(mergeNoteBodies(null, null)).toBe("")
+  })
+})
+
+const mkEntry = (over: Partial<BootstrapEntry>): BootstrapEntry => ({
+  date: "2026-06-06", time: "10:00", kind: "m",
+  projectTag: "general", sig: 5,
+  title: "t", summary: "s", ...over,
+})
+
+describe("composeBootstrapMessage — two-tier", () => {
+  test("renders active and other sections with caps", () => {
+    const active = Array.from({ length: 5 }, (_, i) => mkEntry({
+      title: `active${i}`, sig: 9 - i, projectTag: "opencode-personal-agent",
+    }))
+    const other = Array.from({ length: 3 }, (_, i) => mkEntry({
+      title: `other${i}`, sig: 7, projectTag: `proj${i}`,
+    }))
+    const data: BootstrapData = {
+      projectName: "opencode-personal-agent",
+      recentActive: active,
+      recentOther: other,
+      activitySummary: null,
+      agentLearnings: null,
+    }
+    const out = composeBootstrapMessage(data)
+    expect(out).toContain("### Active repo (last 7d, ranked by sig)")
+    expect(out).toContain("### Other recent work (last 3d, top 7 by sig \u22656)")
+    expect(out).toContain("active0")
+    expect(out).toContain("other0")
+    expect(out).toContain("_End memory bootstrap. Continue normally._")
+  })
+
+  test("caps are exported as 12 and 7", () => {
+    expect(BOOTSTRAP_ACTIVE_CAP).toBe(12)
+    expect(BOOTSTRAP_OTHER_CAP).toBe(7)
+    expect(BOOTSTRAP_OTHER_SIG_THRESHOLD).toBe(6)
+  })
+
+  test("omits Other section when recentOther is empty", () => {
+    const data: BootstrapData = {
+      projectName: "x", recentActive: [], recentOther: [],
+      activitySummary: null, agentLearnings: null,
+    }
+    const out = composeBootstrapMessage(data)
+    expect(out).not.toContain("### Other recent work")
   })
 })

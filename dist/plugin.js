@@ -1,6 +1,9 @@
 // src/bootstrap.ts
 import * as fs from "node:fs/promises";
 import * as nodePath from "node:path";
+var BOOTSTRAP_ACTIVE_CAP = 12;
+var BOOTSTRAP_OTHER_CAP = 7;
+var BOOTSTRAP_OTHER_SIG_THRESHOLD = 6;
 function detectProject(cwd, projectMap) {
   const parts = cwd.replace(/\/$/, "").split("/").filter(Boolean);
   if (parts.length === 0)
@@ -38,29 +41,31 @@ async function readAgentLearnings(home) {
     return null;
   }
 }
+function renderActiveLine(e) {
+  const md = e.date.slice(5);
+  return `- ${md} ${e.time} [${e.kind} sig:${e.sig}] ${e.title} — ${e.summary}`;
+}
+function renderOtherLine(e) {
+  const md = e.date.slice(5);
+  return `- ${md} ${e.time} [${e.projectTag}] ${e.title}`;
+}
 function composeBootstrapMessage(data) {
   const lines = ["## Memory bootstrap", ""];
-  lines.push(`**Active project (from cwd)**: ${data.projectName}`);
+  lines.push(`proj: ${data.projectName}`);
   if (data.activitySummary) {
-    lines.push(`**Today's activity**: ${data.activitySummary}`);
+    lines.push(`today: ${data.activitySummary}`);
   }
   lines.push("");
-  if (data.recentDecisions.length > 0) {
-    lines.push("### Recent decisions (last 7 days)");
-    for (const d of data.recentDecisions)
-      lines.push(`- ${d}`);
+  if (data.recentActive.length > 0) {
+    lines.push("### Active repo (last 7d, ranked by sig)");
+    for (const e of data.recentActive)
+      lines.push(renderActiveLine(e));
     lines.push("");
   }
-  if (data.recentMemories.length > 0) {
-    lines.push("### Recent memories (last 7 days)");
-    for (const m of data.recentMemories)
-      lines.push(`- ${m}`);
-    lines.push("");
-  }
-  if (data.projectNotes.length > 0) {
-    lines.push("### Project-tagged notes (last 7 days)");
-    for (const n of data.projectNotes)
-      lines.push(`- ${n}`);
+  if (data.recentOther.length > 0) {
+    lines.push(`### Other recent work (last 3d, top ${BOOTSTRAP_OTHER_CAP} by sig ≥${BOOTSTRAP_OTHER_SIG_THRESHOLD})`);
+    for (const e of data.recentOther)
+      lines.push(renderOtherLine(e));
     lines.push("");
   }
   if (data.agentLearnings) {
@@ -234,23 +239,6 @@ class JoplinClient {
     } catch {
       return null;
     }
-  }
-  static parseDecisionLines(body, withinDays, now) {
-    const cutoff = new Date(now.getTime() - withinDays * 24 * 60 * 60 * 1000);
-    const sections = body.split(/^---$/m).map((s) => s.trim()).filter(Boolean);
-    const results = [];
-    for (const section of sections) {
-      if (results.length >= 10)
-        break;
-      const m = section.match(/^##\s+(\d{4}-\d{2}-\d{2})\s+[\d:]+\s+\u2014\s+(.+)$/m);
-      if (!m)
-        continue;
-      const entryDate = new Date(m[1]);
-      if (isNaN(entryDate.getTime()) || entryDate < cutoff)
-        continue;
-      results.push(`${m[1]} — ${m[2].trim()}`);
-    }
-    return results;
   }
   static parseEntries(body, opts) {
     if (!body)
@@ -1311,16 +1299,16 @@ var PersonalAgent = async ({ client }) => {
         body: {
           service: "personal-agent",
           level: "info",
-          message: `bootstrapped session ${sessionId} with ${data.recentDecisions.length} decisions, ${data.recentMemories.length} memories`,
+          message: `bootstrapped session ${sessionId} with ${data.recentActive.length} active + ${data.recentOther.length} other entries`,
           extra: { project: data.projectName }
         }
       });
-      if (data.projectNotes.length === 0 && data.projectName !== "unknown") {
+      if (data.recentActive.length === 0 && data.projectName !== "unknown") {
         await client.app.log({
           body: {
             service: "personal-agent",
             level: "info",
-            message: `no project notes found for "${data.projectName}" — reflect() will create them automatically after your first session, or create a note in Second Brain tagged +${data.projectName}`,
+            message: `no recent active entries found for "${data.projectName}" — reflect() will create them automatically after your first session`,
             extra: { project: data.projectName }
           }
         });
@@ -1511,7 +1499,6 @@ async function gatherBootstrapData(joplin, memory, cwd) {
     prevDecisionsNote,
     memoriesNote,
     prevMemoriesNote,
-    projectNotes,
     activities,
     agentLearnings
   ] = await Promise.all([
@@ -1519,17 +1506,21 @@ async function gatherBootstrapData(joplin, memory, cwd) {
     joplin.getNote(decisionsNoteName(prev)),
     joplin.getNote(memoriesNoteName(now)),
     joplin.getNote(memoriesNoteName(prev)),
-    joplin.searchNotes(`tag:${projectName}`, 5),
     memory.getTodayActivities(),
     readAgentLearnings(home)
   ]);
   const decisionsBody = mergeNoteBodies(decisionsNote?.body ?? null, prevDecisionsNote?.body ?? null);
   const memoriesBody = mergeNoteBodies(memoriesNote?.body ?? null, prevMemoriesNote?.body ?? null);
+  const decisionsEntries = JoplinClient.parseEntries(decisionsBody, { withinDays: 7, now });
+  const memoriesEntries = JoplinClient.parseEntries(memoriesBody, { withinDays: 7, now });
+  const all = [...decisionsEntries, ...memoriesEntries];
+  const active = all.filter((e) => e.projectTag === projectName).sort((a, b) => b.sig - a.sig || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)).slice(0, BOOTSTRAP_ACTIVE_CAP);
+  const threeDayCutoff = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const other = all.filter((e) => e.projectTag !== projectName && new Date(e.date) >= threeDayCutoff && e.sig >= BOOTSTRAP_OTHER_SIG_THRESHOLD).sort((a, b) => b.sig - a.sig || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)).slice(0, BOOTSTRAP_OTHER_CAP);
   return {
     projectName,
-    recentDecisions: JoplinClient.parseDecisionLines(decisionsBody, 7, now),
-    recentMemories: JoplinClient.parseDecisionLines(memoriesBody, 7, now),
-    projectNotes: projectNotes.slice(0, 5).map((n) => `${n.title} — ${n.body.slice(0, 80).replace(/\n/g, " ")}`),
+    recentActive: active,
+    recentOther: other,
     activitySummary: activities ? MemoryClient.summarizeActivities(activities) : null,
     agentLearnings
   };
