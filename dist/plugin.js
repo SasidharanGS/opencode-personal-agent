@@ -515,73 +515,49 @@ function parseReflectionJson(raw) {
   const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object").map((l) => ({ ...l, significance: clampSig(l.significance) }));
   return { decisions, memories, agent_learnings };
 }
-function renderDecision(d, now, sessionId = "unknown") {
+function renderDecision(d, now, _sessionId = "unknown") {
   const ts = now.toISOString().slice(0, 16).replace("T", " ");
-  const tag = d.project_tag ? `  +${d.project_tag}` : "";
-  const rejected = d.rejected.length > 0 ? d.rejected.map((r) => `  - ${r}`).join(`
-`) : "  - (none recorded)";
-  return `## ${ts} — ${d.title}
-
-**Project**: ${d.project_tag ?? "general"}${tag}
-**Context**: ${d.context}
-**Decision**: ${d.decision}
-**Rationale**: ${d.rationale}
-**Rejected**:
-${rejected}
-
-**Recorded by**: agent (session ${sessionId})
-
----`;
+  const proj = d.project_tag ?? "general";
+  const lines = [
+    `## ${ts} — ${d.title}`,
+    `proj: ${proj} · sig: ${d.significance}`,
+    `why: ${d.context}`,
+    `chose: ${d.decision}`
+  ];
+  if (d.rejected.length > 0) {
+    lines.push(`vs: ${d.rejected.join("; ")}`);
+  }
+  return lines.join(`
+`);
 }
-function renderMemory(m, now, sessionId = "unknown") {
+function renderMemory(m, now, _sessionId = "unknown") {
   const ts = now.toISOString().slice(0, 16).replace("T", " ");
-  const tag = m.project_tag ? `  +${m.project_tag}` : "";
-  const files = m.files_touched.length > 0 ? m.files_touched.map((f) => `  - ${f}`).join(`
-`) : "  - (none)";
-  const loose = m.loose_ends.length > 0 ? m.loose_ends.map((l) => `  - ${l}`).join(`
-`) : "  - (none)";
-  return `## ${ts} — ${m.title}
-
-**Project**: ${m.project_tag ?? "general"}${tag}
-**What happened**: ${m.what_happened}
-**Significance**: ${m.significance_text}
-**Files touched**:
-${files}
-**Loose ends**:
-${loose}
-
-**Recorded by**: agent (session ${sessionId})
-
----`;
+  const proj = m.project_tag ?? "general";
+  const lines = [
+    `## ${ts} — ${m.title}`,
+    `proj: ${proj} · sig: ${m.significance}`,
+    `why: ${m.what_happened}`,
+    `did: ${m.significance_text}`
+  ];
+  if (m.files_touched.length > 0) {
+    lines.push(`files: ${m.files_touched.join(", ")}`);
+  }
+  if (m.loose_ends.length > 0) {
+    lines.push(`loose: ${m.loose_ends.join(", ")}`);
+  }
+  return lines.join(`
+`);
 }
-function renderLearning(l, now, crossSessionCount, sessionId) {
+function renderLearning(l, now, crossSessionCount, _sessionId) {
   const ts = now.toISOString().slice(0, 16).replace("T", " ");
   const status = crossSessionCount >= 2 ? "proposed_agents_edit" : "pending_more_evidence";
-  return `## ${ts} — ${l.observed.slice(0, 60)}
-
-**Type**: ${l.type}
-**Observed**: ${l.observed}
-**Evidence**: session ${sessionId} messages [${l.evidence_message_indices.join(", ")}]
-**Cross-session count**: ${crossSessionCount}
-**Proposed action**: ${l.proposed_action}
-**Status**: ${status}
-**Recorded by**: agent (session ${sessionId})
-
----`;
-}
-function renderProjectNoteEntry(type, title, summary, now, sessionId) {
-  const ts = now.toISOString().slice(0, 16).replace("T", " ");
-  return `## ${ts} — ${title}
-
-**Type**: ${type}
-**Summary**: ${summary}
-
-**Recorded by**: agent (session ${sessionId})
-
----`;
-}
-function projectNoteName(projectTag) {
-  return `Project Notes — ${projectTag}`;
+  return [
+    `## ${ts} — ${l.observed.slice(0, 60)}`,
+    `type: ${l.type} · sig: ${l.significance} · seen: ${crossSessionCount}`,
+    `observed: ${l.observed}`,
+    `action: ${l.proposed_action} (${status})`
+  ].join(`
+`);
 }
 function agentLearningsNoteName(date) {
   const y = date.getFullYear();
@@ -635,17 +611,9 @@ async function reflect(state, client, joplin) {
   const result = parseReflectionJson(raw);
   for (const d of result.decisions) {
     await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK);
-    if (d.project_tag) {
-      const entry = renderProjectNoteEntry("decision", d.title, d.decision, now, state.sessionId);
-      await joplin.appendToNote(projectNoteName(d.project_tag), entry, JOPLIN_NOTEBOOK, d.project_tag);
-    }
   }
   for (const m of result.memories) {
     await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK);
-    if (m.project_tag) {
-      const entry = renderProjectNoteEntry("memory", m.title, m.what_happened.slice(0, 120), now, state.sessionId);
-      await joplin.appendToNote(projectNoteName(m.project_tag), entry, JOPLIN_NOTEBOOK, m.project_tag);
-    }
   }
   const learningNoteName = agentLearningsNoteName(now);
   for (const l of result.agent_learnings) {

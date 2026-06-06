@@ -62,45 +62,53 @@ export function parseReflectionJson(raw: string): ReflectionResult {
   return { decisions, memories, agent_learnings }
 }
 
-export function renderDecision(d: ReflectionDecision, now: Date, sessionId = "unknown"): string {
+export function renderDecision(d: ReflectionDecision, now: Date, _sessionId = "unknown"): string {
   const ts = now.toISOString().slice(0, 16).replace("T", " ")
-  const tag = d.project_tag ? `  +${d.project_tag}` : ""
-  const rejected = d.rejected.length > 0 ? d.rejected.map(r => `  - ${r}`).join("\n") : "  - (none recorded)"
-  return `## ${ts} \u2014 ${d.title}\n\n**Project**: ${d.project_tag ?? "general"}${tag}\n**Context**: ${d.context}\n**Decision**: ${d.decision}\n**Rationale**: ${d.rationale}\n**Rejected**:\n${rejected}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
+  const proj = d.project_tag ?? "general"
+  const lines = [
+    `## ${ts} \u2014 ${d.title}`,
+    `proj: ${proj} \u00b7 sig: ${d.significance}`,
+    `why: ${d.context}`,
+    `chose: ${d.decision}`,
+  ]
+  if (d.rejected.length > 0) {
+    lines.push(`vs: ${d.rejected.join("; ")}`)
+  }
+  return lines.join("\n")
 }
 
-export function renderMemory(m: ReflectionMemory, now: Date, sessionId = "unknown"): string {
+export function renderMemory(m: ReflectionMemory, now: Date, _sessionId = "unknown"): string {
   const ts = now.toISOString().slice(0, 16).replace("T", " ")
-  const tag = m.project_tag ? `  +${m.project_tag}` : ""
-  const files = m.files_touched.length > 0 ? m.files_touched.map(f => `  - ${f}`).join("\n") : "  - (none)"
-  const loose = m.loose_ends.length > 0 ? m.loose_ends.map(l => `  - ${l}`).join("\n") : "  - (none)"
-  return `## ${ts} \u2014 ${m.title}\n\n**Project**: ${m.project_tag ?? "general"}${tag}\n**What happened**: ${m.what_happened}\n**Significance**: ${m.significance_text}\n**Files touched**:\n${files}\n**Loose ends**:\n${loose}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
+  const proj = m.project_tag ?? "general"
+  const lines = [
+    `## ${ts} \u2014 ${m.title}`,
+    `proj: ${proj} \u00b7 sig: ${m.significance}`,
+    `why: ${m.what_happened}`,
+    `did: ${m.significance_text}`,
+  ]
+  if (m.files_touched.length > 0) {
+    lines.push(`files: ${m.files_touched.join(", ")}`)
+  }
+  if (m.loose_ends.length > 0) {
+    lines.push(`loose: ${m.loose_ends.join(", ")}`)
+  }
+  return lines.join("\n")
 }
 
 export function renderLearning(
   l: ReflectionLearning,
   now: Date,
   crossSessionCount: number,
-  sessionId: string,
+  _sessionId: string,
 ): string {
   const ts = now.toISOString().slice(0, 16).replace("T", " ")
   const status = crossSessionCount >= 2 ? "proposed_agents_edit" : "pending_more_evidence"
-  return `## ${ts} \u2014 ${l.observed.slice(0, 60)}\n\n**Type**: ${l.type}\n**Observed**: ${l.observed}\n**Evidence**: session ${sessionId} messages [${l.evidence_message_indices.join(", ")}]\n**Cross-session count**: ${crossSessionCount}\n**Proposed action**: ${l.proposed_action}\n**Status**: ${status}\n**Recorded by**: agent (session ${sessionId})\n\n---`
-}
-
-export function renderProjectNoteEntry(
-  type: "decision" | "memory",
-  title: string,
-  summary: string,
-  now: Date,
-  sessionId: string,
-): string {
-  const ts = now.toISOString().slice(0, 16).replace("T", " ")
-  return `## ${ts} \u2014 ${title}\n\n**Type**: ${type}\n**Summary**: ${summary}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
-}
-
-export function projectNoteName(projectTag: string): string {
-  return `Project Notes \u2014 ${projectTag}`
+  return [
+    `## ${ts} \u2014 ${l.observed.slice(0, 60)}`,
+    `type: ${l.type} \u00b7 sig: ${l.significance} \u00b7 seen: ${crossSessionCount}`,
+    `observed: ${l.observed}`,
+    `action: ${l.proposed_action} (${status})`,
+  ].join("\n")
 }
 
 export function agentLearningsNoteName(date: Date): string {
@@ -172,18 +180,10 @@ export async function reflect(
 
   for (const d of result.decisions) {
     await joplin.appendToNote(decisionsNoteName(now), renderDecision(d, now, state.sessionId), JOPLIN_NOTEBOOK)
-    if (d.project_tag) {
-      const entry = renderProjectNoteEntry("decision", d.title, d.decision, now, state.sessionId)
-      await joplin.appendToNote(projectNoteName(d.project_tag), entry, JOPLIN_NOTEBOOK, d.project_tag)
-    }
   }
 
   for (const m of result.memories) {
     await joplin.appendToNote(memoriesNoteName(now), renderMemory(m, now, state.sessionId), JOPLIN_NOTEBOOK)
-    if (m.project_tag) {
-      const entry = renderProjectNoteEntry("memory", m.title, m.what_happened.slice(0, 120), now, state.sessionId)
-      await joplin.appendToNote(projectNoteName(m.project_tag), entry, JOPLIN_NOTEBOOK, m.project_tag)
-    }
   }
 
   const learningNoteName = agentLearningsNoteName(now)
