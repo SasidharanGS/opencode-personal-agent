@@ -51,13 +51,28 @@ export interface JoplinTag {
   title: string
 }
 
+export interface BootstrapEntry {
+  date: string         // ISO date "YYYY-MM-DD"
+  time: string         // "HH:MM"
+  kind: "m" | "d"      // memory or decision
+  projectTag: string   // "general" when null
+  sig: number          // 1-10, clamped
+  title: string
+  summary: string      // first sentence of why/did/chose, ~60 chars max
+}
+
 export interface BootstrapData {
   projectName: string
-  recentDecisions: string[]
-  recentMemories: string[]
-  projectNotes: string[]
+  // v2 fields (set by gatherBootstrapData in Task 5):
+  recentActive: BootstrapEntry[]
+  recentOther: BootstrapEntry[]
   activitySummary: string | null
-  agentLearnings: string | null    // raw content of agent-learnings.md injected into system prompt
+  agentLearnings: string | null
+  // v1 fields — DEPRECATED; retained for one task to keep tests green.
+  // Removed in Task 5.
+  recentDecisions?: string[]
+  recentMemories?: string[]
+  projectNotes?: string[]
 }
 
 export interface MemoryActivity {
@@ -74,16 +89,18 @@ export interface ReflectionDecision {
   rejected: string[]
   project_tag: string | null
   confidence: number
+  significance: number     // 1-10, clamped at parse time, default 5
 }
 
 export interface ReflectionMemory {
   title: string
   what_happened: string
-  significance: string
+  significance_text: string   // renamed from `significance` (string) — qualitative one-liner
   files_touched: string[]
   loose_ends: string[]
   project_tag: string | null
   confidence: number
+  significance: number        // 1-10 numeric — NEW
 }
 
 export interface ReflectionLearning {
@@ -92,6 +109,7 @@ export interface ReflectionLearning {
   evidence_message_indices: number[]
   proposed_action: "AGENTS.md edit" | "skill" | "behavior only"
   confidence: number
+  significance: number     // 1-10, NEW
 }
 
 export interface ReflectionResult {

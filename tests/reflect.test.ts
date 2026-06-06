@@ -71,6 +71,7 @@ describe("renderDecision", () => {
     rejected: ["Postgres — too heavy"],
     project_tag: "myrepo",
     confidence: 0.9,
+    significance: 5,
   }
 
   test("includes title in heading", () => {
@@ -94,11 +95,12 @@ describe("renderMemory", () => {
   const memory: ReflectionMemory = {
     title: "PR merged",
     what_happened: "Merged main.",
-    significance: "Unblocks release",
+    significance_text: "Unblocks release",
     files_touched: ["README.md"],
     loose_ends: ["Write changelog"],
     project_tag: null,
     confidence: 0.8,
+    significance: 5,
   }
 
   test("includes title", () => {
@@ -121,6 +123,7 @@ describe("renderLearning", () => {
     evidence_message_indices: [3],
     proposed_action: "AGENTS.md edit",
     confidence: 0.7,
+    significance: 5,
   }
 
   test("includes observed text", () => {

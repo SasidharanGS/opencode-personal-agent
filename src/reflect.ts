@@ -39,12 +39,23 @@ export function parseReflectionJson(raw: string): ReflectionResult {
     try { parsed = JSON.parse(match[0]) } catch { return empty }
   }
   if (!parsed || typeof parsed !== "object") return empty
+  const clampSig = (v: any): number => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return 5
+    return Math.max(1, Math.min(10, Math.round(n)))
+  }
   const decisions: ReflectionDecision[] = (Array.isArray(parsed.decisions) ? parsed.decisions : [])
     .filter((d: any) => d && typeof d === "object" && (d.confidence ?? 0) >= CONFIDENCE_THRESHOLD)
+    .map((d: any) => ({ ...d, significance: clampSig(d.significance) }))
+  // v1 LLM emits significance as a string (e.g. "Notable"); v2 emits a number.
+  // clampSig defaults to 5 for non-numeric input, so v1 strings are safe.
+  // significance_text falls back to significance (v1 string) until v2 is the only prompt.
   const memories: ReflectionMemory[] = (Array.isArray(parsed.memories) ? parsed.memories : [])
     .filter((m: any) => m && typeof m === "object" && (m.confidence ?? 0) >= CONFIDENCE_THRESHOLD)
+    .map((m: any) => ({ ...m, significance_text: m.significance_text ?? m.significance ?? "", significance: clampSig(m.significance) }))
   const agent_learnings: ReflectionLearning[] = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : [])
     .filter((l: any) => l && typeof l === "object")
+    .map((l: any) => ({ ...l, significance: clampSig(l.significance) }))
   return { decisions, memories, agent_learnings }
 }
 
@@ -60,7 +71,7 @@ export function renderMemory(m: ReflectionMemory, now: Date, sessionId = "unknow
   const tag = m.project_tag ? `  +${m.project_tag}` : ""
   const files = m.files_touched.length > 0 ? m.files_touched.map(f => `  - ${f}`).join("\n") : "  - (none)"
   const loose = m.loose_ends.length > 0 ? m.loose_ends.map(l => `  - ${l}`).join("\n") : "  - (none)"
-  return `## ${ts} \u2014 ${m.title}\n\n**Project**: ${m.project_tag ?? "general"}${tag}\n**What happened**: ${m.what_happened}\n**Significance**: ${m.significance}\n**Files touched**:\n${files}\n**Loose ends**:\n${loose}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
+  return `## ${ts} \u2014 ${m.title}\n\n**Project**: ${m.project_tag ?? "general"}${tag}\n**What happened**: ${m.what_happened}\n**Significance**: ${m.significance_text}\n**Files touched**:\n${files}\n**Loose ends**:\n${loose}\n\n**Recorded by**: agent (session ${sessionId})\n\n---`
 }
 
 export function renderLearning(

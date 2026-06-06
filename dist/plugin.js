@@ -447,9 +447,15 @@ function parseReflectionJson(raw) {
   }
   if (!parsed || typeof parsed !== "object")
     return empty;
-  const decisions = (Array.isArray(parsed.decisions) ? parsed.decisions : []).filter((d) => d && typeof d === "object" && (d.confidence ?? 0) >= CONFIDENCE_THRESHOLD);
-  const memories = (Array.isArray(parsed.memories) ? parsed.memories : []).filter((m) => m && typeof m === "object" && (m.confidence ?? 0) >= CONFIDENCE_THRESHOLD);
-  const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object");
+  const clampSig = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n))
+      return 5;
+    return Math.max(1, Math.min(10, Math.round(n)));
+  };
+  const decisions = (Array.isArray(parsed.decisions) ? parsed.decisions : []).filter((d) => d && typeof d === "object" && (d.confidence ?? 0) >= CONFIDENCE_THRESHOLD).map((d) => ({ ...d, significance: clampSig(d.significance) }));
+  const memories = (Array.isArray(parsed.memories) ? parsed.memories : []).filter((m) => m && typeof m === "object" && (m.confidence ?? 0) >= CONFIDENCE_THRESHOLD).map((m) => ({ ...m, significance_text: m.significance_text ?? m.significance ?? "", significance: clampSig(m.significance) }));
+  const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object").map((l) => ({ ...l, significance: clampSig(l.significance) }));
   return { decisions, memories, agent_learnings };
 }
 function renderDecision(d, now, sessionId = "unknown") {
@@ -481,7 +487,7 @@ function renderMemory(m, now, sessionId = "unknown") {
 
 **Project**: ${m.project_tag ?? "general"}${tag}
 **What happened**: ${m.what_happened}
-**Significance**: ${m.significance}
+**Significance**: ${m.significance_text}
 **Files touched**:
 ${files}
 **Loose ends**:
