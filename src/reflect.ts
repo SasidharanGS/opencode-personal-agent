@@ -16,15 +16,18 @@ const REFLECTION_SYSTEM_PROMPT = `You are the reflection module of a personal AI
 
 Output schema (strict JSON, no prose):
 {
-  "decisions": [{"title":"<short>","context":"<what was being worked on>","decision":"<chosen path>","rationale":"<why this over alternatives>","rejected":["<alt with one-line why>"],"project_tag":"<tag or null>","confidence":0.0}],
-  "memories": [{"title":"<short>","what_happened":"<single paragraph>","significance":"<one line>","files_touched":["<path>"],"loose_ends":["<line>"],"project_tag":"<tag or null>","confidence":0.0}],
-  "agent_learnings": [{"type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0}]
+  "decisions": [{"title":"<short>","context":"<what was being worked on>","decision":"<chosen path>","rationale":"<why this over alternatives>","rejected":["<alt with one-line why>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
+  "memories": [{"title":"<short>","what_happened":"<single paragraph>","significance_text":"<one line qualitative>","files_touched":["<path>"],"loose_ends":["<line>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
+  "agent_learnings": [{"type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0,"significance":5}]
 }
 
 Rules:
 - A decision requires a rejected alternative. Otherwise it is a memory.
 - agent_learnings only when user CORRECTED the agent or expressed a preference. Not routine work.
 - confidence >= 0.6 means worth writing. Plugin drops items below 0.6.
+- significance is an integer 1-10. 1 = trivial, 10 = pivotal. Default 5 if unsure.
+   Reserve 8+ for entries that will still matter weeks later (architectural decisions,
+   recurring patterns, hard-won bug root causes). Reserve <=3 for routine work.
 - Output only NEW items from this session. If nothing notable happened, return empty arrays.`
 
 export function parseReflectionJson(raw: string): ReflectionResult {

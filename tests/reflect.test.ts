@@ -60,6 +60,44 @@ describe("parseReflectionJson", () => {
     const result = parseReflectionJson(JSON.stringify({ decisions: null }))
     expect(result.decisions).toHaveLength(0)
   })
+
+  test("preserves significance: number on decisions", () => {
+    const raw = JSON.stringify({
+      decisions: [{
+        title: "t", context: "c", decision: "d", rationale: "r",
+        rejected: ["a"], project_tag: null, confidence: 0.9,
+        significance: 8,
+      }],
+      memories: [], agent_learnings: [],
+    })
+    const out = parseReflectionJson(raw)
+    expect(out.decisions[0].significance).toBe(8)
+  })
+
+  test("clamps out-of-range significance to [1,10]", () => {
+    const raw = JSON.stringify({
+      decisions: [{
+        title: "t", context: "c", decision: "d", rationale: "r",
+        rejected: ["a"], project_tag: null, confidence: 0.9,
+        significance: 99,
+      }],
+      memories: [], agent_learnings: [],
+    })
+    const out = parseReflectionJson(raw)
+    expect(out.decisions[0].significance).toBe(10)
+  })
+
+  test("defaults significance to 5 when missing", () => {
+    const raw = JSON.stringify({
+      decisions: [{
+        title: "t", context: "c", decision: "d", rationale: "r",
+        rejected: ["a"], project_tag: null, confidence: 0.9,
+      }],
+      memories: [], agent_learnings: [],
+    })
+    const out = parseReflectionJson(raw)
+    expect(out.decisions[0].significance).toBe(5)
+  })
 })
 
 describe("renderDecision", () => {
