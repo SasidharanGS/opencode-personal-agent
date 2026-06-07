@@ -511,8 +511,12 @@ function parseReflectionJson(raw) {
   const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object").map((l) => ({ ...l, title: l.title ?? l.observed?.slice(0, 60) ?? "", significance: clampSig(l.significance) }));
   return { decisions, memories, agent_learnings };
 }
+function localTs(now) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
 function renderDecision(d, now, _sessionId = "unknown") {
-  const ts = now.toISOString().slice(0, 16).replace("T", " ");
+  const ts = localTs(now);
   const proj = d.project_tag ?? "general";
   const lines = [
     `## ${ts} — ${d.title}`,
@@ -527,7 +531,7 @@ function renderDecision(d, now, _sessionId = "unknown") {
 `);
 }
 function renderMemory(m, now, _sessionId = "unknown") {
-  const ts = now.toISOString().slice(0, 16).replace("T", " ");
+  const ts = localTs(now);
   const proj = m.project_tag ?? "general";
   const lines = [
     `## ${ts} — ${m.title}`,
@@ -545,7 +549,7 @@ function renderMemory(m, now, _sessionId = "unknown") {
 `);
 }
 function renderLearning(l, now, crossSessionCount, _sessionId) {
-  const ts = now.toISOString().slice(0, 16).replace("T", " ");
+  const ts = localTs(now);
   const status = crossSessionCount >= 2 ? "proposed_agents_edit" : "pending_more_evidence";
   return [
     `## ${ts} — ${l.title ?? l.observed.slice(0, 60)}`,

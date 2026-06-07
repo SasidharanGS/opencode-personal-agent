@@ -107,7 +107,7 @@ describe("agentLearningsNoteName", () => {
 })
 
 describe("renderDecision — v2 compact", () => {
-  const now = new Date("2026-06-06T14:32:00Z")
+  const now = new Date(2026, 5, 6, 14, 32, 0)  // local time
 
   test("renders compact decision with proj/sig/why/chose/vs", () => {
     const d = {
@@ -150,7 +150,7 @@ describe("renderDecision — v2 compact", () => {
 })
 
 describe("renderMemory — v2 compact", () => {
-  const now = new Date("2026-06-06T14:32:00Z")
+  const now = new Date(2026, 5, 6, 14, 32, 0)  // local time
 
   test("renders compact memory with proj/sig/why/did/files/loose", () => {
     const m = {
@@ -197,7 +197,7 @@ describe("renderMemory — v2 compact", () => {
 })
 
 describe("renderLearning — v2 compact", () => {
-  const now = new Date("2026-06-06T14:32:00Z")
+  const now = new Date(2026, 5, 6, 14, 32, 0)  // local time
 
   test("renders compact learning with type/sig/seen/observed/action", () => {
     const l = {
