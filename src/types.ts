@@ -98,6 +98,7 @@ export interface ReflectionMemory {
 }
 
 export interface ReflectionLearning {
+  title: string
   type: "behavior_correction" | "preference_expressed"
   observed: string
   evidence_message_indices: number[]

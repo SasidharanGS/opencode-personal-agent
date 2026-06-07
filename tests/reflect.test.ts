@@ -201,6 +201,7 @@ describe("renderLearning — v2 compact", () => {
 
   test("renders compact learning with type/sig/seen/observed/action", () => {
     const l = {
+      title: "Prefer /search over /notes for Joplin queries",
       type: "preference_expressed" as const,
       observed: "User prefers Joplin /search not /notes",
       evidence_message_indices: [3, 7],
@@ -210,15 +211,29 @@ describe("renderLearning — v2 compact", () => {
     }
     const out = renderLearning(l, now, 3, "ses_x")
     expect(out).toBe(
-      "## 2026-06-06 14:32 \u2014 User prefers Joplin /search not /notes\n" +
+      "## 2026-06-06 14:32 \u2014 Prefer /search over /notes for Joplin queries\n" +
       "type: preference_expressed \u00b7 sig: 8 \u00b7 seen: 3\n" +
       "observed: User prefers Joplin /search not /notes\n" +
       "action: AGENTS.md edit (proposed_agents_edit)"
     )
   })
 
+  test("falls back to observed when title is missing", () => {
+    const l = {
+      type: "preference_expressed" as const,
+      observed: "User prefers short answers",
+      evidence_message_indices: [],
+      proposed_action: "behavior only" as const,
+      confidence: 0.9,
+      significance: 5,
+    } as any
+    const out = renderLearning(l, now, 1, "ses_x")
+    expect(out).toContain("## 2026-06-06 14:32 \u2014 User prefers short answers")
+  })
+
   test("shows proposed_agents_edit status when seen >= 2", () => {
     const l = {
+      title: "x",
       type: "behavior_correction" as const,
       observed: "x",
       evidence_message_indices: [],

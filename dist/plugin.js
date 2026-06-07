@@ -470,7 +470,7 @@ Output schema (strict JSON, no prose):
 {
   "decisions": [{"title":"<short>","context":"<what was being worked on>","decision":"<chosen path>","rationale":"<why this over alternatives>","rejected":["<alt with one-line why>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
   "memories": [{"title":"<short>","what_happened":"<single paragraph>","significance_text":"<one line qualitative>","files_touched":["<path>"],"loose_ends":["<line>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
-  "agent_learnings": [{"type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0,"significance":5}]
+  "agent_learnings": [{"title":"<short>","type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0,"significance":5}]
 }
 
 Rules:
@@ -508,7 +508,7 @@ function parseReflectionJson(raw) {
   };
   const decisions = (Array.isArray(parsed.decisions) ? parsed.decisions : []).filter((d) => d && typeof d === "object" && (d.confidence ?? 0) >= CONFIDENCE_THRESHOLD).map((d) => ({ ...d, significance: clampSig(d.significance) }));
   const memories = (Array.isArray(parsed.memories) ? parsed.memories : []).filter((m) => m && typeof m === "object" && (m.confidence ?? 0) >= CONFIDENCE_THRESHOLD).map((m) => ({ ...m, significance_text: m.significance_text ?? m.significance ?? "", significance: clampSig(m.significance) }));
-  const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object").map((l) => ({ ...l, significance: clampSig(l.significance) }));
+  const agent_learnings = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : []).filter((l) => l && typeof l === "object").map((l) => ({ ...l, title: l.title ?? l.observed?.slice(0, 60) ?? "", significance: clampSig(l.significance) }));
   return { decisions, memories, agent_learnings };
 }
 function renderDecision(d, now, _sessionId = "unknown") {
@@ -548,7 +548,7 @@ function renderLearning(l, now, crossSessionCount, _sessionId) {
   const ts = now.toISOString().slice(0, 16).replace("T", " ");
   const status = crossSessionCount >= 2 ? "proposed_agents_edit" : "pending_more_evidence";
   return [
-    `## ${ts} — ${l.observed.slice(0, 60)}`,
+    `## ${ts} — ${l.title ?? l.observed.slice(0, 60)}`,
     `type: ${l.type} · sig: ${l.significance} · seen: ${crossSessionCount}`,
     `observed: ${l.observed}`,
     `action: ${l.proposed_action} (${status})`

@@ -18,7 +18,7 @@ Output schema (strict JSON, no prose):
 {
   "decisions": [{"title":"<short>","context":"<what was being worked on>","decision":"<chosen path>","rationale":"<why this over alternatives>","rejected":["<alt with one-line why>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
   "memories": [{"title":"<short>","what_happened":"<single paragraph>","significance_text":"<one line qualitative>","files_touched":["<path>"],"loose_ends":["<line>"],"project_tag":"<tag or null>","confidence":0.0,"significance":5}],
-  "agent_learnings": [{"type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0,"significance":5}]
+  "agent_learnings": [{"title":"<short>","type":"behavior_correction","observed":"<what happened>","evidence_message_indices":[0],"proposed_action":"AGENTS.md edit","confidence":0.0,"significance":5}]
 }
 
 Rules:
@@ -58,7 +58,7 @@ export function parseReflectionJson(raw: string): ReflectionResult {
     .map((m: any) => ({ ...m, significance_text: m.significance_text ?? m.significance ?? "", significance: clampSig(m.significance) }))
   const agent_learnings: ReflectionLearning[] = (Array.isArray(parsed.agent_learnings) ? parsed.agent_learnings : [])
     .filter((l: any) => l && typeof l === "object")
-    .map((l: any) => ({ ...l, significance: clampSig(l.significance) }))
+    .map((l: any) => ({ ...l, title: l.title ?? l.observed?.slice(0, 60) ?? "", significance: clampSig(l.significance) }))
   return { decisions, memories, agent_learnings }
 }
 
@@ -104,7 +104,7 @@ export function renderLearning(
   const ts = now.toISOString().slice(0, 16).replace("T", " ")
   const status = crossSessionCount >= 2 ? "proposed_agents_edit" : "pending_more_evidence"
   return [
-    `## ${ts} \u2014 ${l.observed.slice(0, 60)}`,
+    `## ${ts} \u2014 ${l.title ?? l.observed.slice(0, 60)}`,
     `type: ${l.type} \u00b7 sig: ${l.significance} \u00b7 seen: ${crossSessionCount}`,
     `observed: ${l.observed}`,
     `action: ${l.proposed_action} (${status})`,
